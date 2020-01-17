@@ -501,6 +501,17 @@ enum net_verdict net_if_send_data(struct net_if *iface, struct net_pkt *pkt)
 	}
 #endif
 
+#if defined(CONFIG_NET_L2_LEMONBEAT)
+	/* net_ipv6_prepare_for_send() might select a different iface for
+	 * sending (e.g. ppp) based on routing, so this block MUST be behind
+	 * net_ipv6_prepare_for_send().
+	 */
+	if (net_if_l2(iface) == &NET_L2_GET_NAME(LEMONBEAT)) {
+		verdict = NET_OK;
+		goto done;
+	}
+#endif
+
 done:
 	/*   NET_OK in which case packet has checked successfully. In this case
 	 *   the net_context callback is called after successful delivery in
