@@ -8,11 +8,4 @@ if BOARD_NUCLEO_F429ZI
 config BOARD
 	default "nucleo_f429zi"
 
-if NETWORKING
-
-config NET_L2_ETHERNET
-	default y
-
-endif # NETWORKING
-
 endif # BOARD_NUCLEO_F429ZI
