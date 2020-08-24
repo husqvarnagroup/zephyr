@@ -649,7 +649,8 @@ static int socket_send_message(struct lwm2m_ctx *client_ctx)
 		coap_pending_cycle(msg->pending);
 	}
 
-	rc = zsock_send(msg->ctx->sock_fd, msg->cpkt.data, msg->cpkt.offset, 0);
+	rc = zsock_sendto(msg->ctx->sock_fd, msg->cpkt.data, msg->cpkt.offset, 0,
+			  &msg->ctx->remote_addr, NET_SOCKADDR_MAX_SIZE);
 
 	if (rc < 0) {
 		LOG_ERR("Failed to send packet, err %d", errno);
@@ -900,18 +901,48 @@ int lwm2m_socket_start(struct lwm2m_ctx *client_ctx)
 		}
 	}
 #endif /* CONFIG_LWM2M_DTLS_SUPPORT */
+	struct sockaddr_storage bind_addr = {};
+
 	if ((client_ctx->remote_addr).sa_family == AF_INET) {
+		struct sockaddr_in *addr = (struct sockaddr_in *)&bind_addr;
+
 		addr_len = sizeof(struct sockaddr_in);
+		addr->sin_family = AF_INET;
+		addr->sin_addr.s_addr = htonl(INADDR_ANY);
+		if (client_ctx->bootstrap_mode) {
+#ifdef CONFIG_LWM2M_BOOTSTRAP_CLIENT_SOURCE_PORT
+			addr->sin_port = htons(CONFIG_LWM2M_BOOTSTRAP_CLIENT_SOURCE_PORT);
+#else
+			addr->sin_port = htons(CONFIG_LWM2M_CLIENT_SOURCE_PORT);
+#endif
+		} else {
+			addr->sin_port = htons(CONFIG_LWM2M_CLIENT_SOURCE_PORT);
+		}
+
 	} else if ((client_ctx->remote_addr).sa_family == AF_INET6) {
+		struct sockaddr_in6 *addr = (struct sockaddr_in6 *)&bind_addr;
+
 		addr_len = sizeof(struct sockaddr_in6);
+		addr->sin6_family = AF_INET6;
+		addr->sin6_addr = in6addr_any;
+		if (client_ctx->bootstrap_mode) {
+#ifdef CONFIG_LWM2M_BOOTSTRAP_CLIENT_SOURCE_PORT
+			addr->sin6_port = htons(CONFIG_LWM2M_BOOTSTRAP_CLIENT_SOURCE_PORT);
+#else
+			addr->sin6_port = htons(CONFIG_LWM2M_CLIENT_SOURCE_PORT);
+#endif
+		} else {
+			addr->sin6_port = htons(CONFIG_LWM2M_CLIENT_SOURCE_PORT);
+		}
+
 	} else {
 		lwm2m_engine_stop(client_ctx);
 		return -EPROTONOSUPPORT;
 	}
 
-	if (zsock_connect(client_ctx->sock_fd, &client_ctx->remote_addr, addr_len) < 0) {
+	if (zsock_bind(client_ctx->sock_fd, (struct sockaddr *)&bind_addr, addr_len) < 0) {
 		ret = -errno;
-		LOG_ERR("Cannot connect UDP (%d)", ret);
+		LOG_ERR("Cannot bind UDP (%d)", ret);
 		goto error;
 	}
 
