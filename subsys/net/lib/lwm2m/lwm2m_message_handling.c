@@ -447,7 +447,8 @@ int lwm2m_send_message(struct lwm2m_message *msg)
 		coap_pending_cycle(msg->pending);
 	}
 
-	rc = send(msg->ctx->sock_fd, msg->cpkt.data, msg->cpkt.offset, 0);
+	rc = sendto(msg->ctx->sock_fd, msg->cpkt.data, msg->cpkt.offset, 0, &msg->ctx->remote_addr,
+		    NET_SOCKADDR_MAX_SIZE);
 
 	if (rc < 0) {
 		LOG_ERR("Failed to send packet, err %d", errno);
