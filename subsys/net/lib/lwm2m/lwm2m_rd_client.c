@@ -434,6 +434,23 @@ static int do_bootstrap_reply_cb(const struct coap_packet *response,
 
 	if (code == COAP_RESPONSE_CODE_CHANGED) {
 		LOG_INF("Bootstrap registration done!");
+
+		bool remote_addr_is_multicast = false;
+
+		if (client.ctx->remote_addr.sa_family == AF_INET) {
+			remote_addr_is_multicast = net_ipv4_is_addr_mcast(
+				&net_sin(&client.ctx->remote_addr)->sin_addr);
+		} else if (client.ctx->remote_addr.sa_family == AF_INET6) {
+			remote_addr_is_multicast = net_ipv6_is_addr_mcast(
+				&net_sin6(&client.ctx->remote_addr)->sin6_addr);
+		}
+
+		if (remote_addr_is_multicast) {
+			net_ipaddr_copy(&client.ctx->remote_addr, from);
+			LOG_DBG("Updated remote address from multicast to [%s]",
+				lwm2m_sprint_ip_addr(from));
+		}
+
 		set_sm_state(ENGINE_BOOTSTRAP_REG_DONE);
 		return 0;
 	}
