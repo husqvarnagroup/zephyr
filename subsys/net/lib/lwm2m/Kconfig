@@ -197,6 +197,21 @@ config LWM2M_FIRMWARE_PORT_SECURE
 	help
 	  This is the default server port to connect to for LwM2M firmware downloads over coaps.
 
+config LWM2M_BOOTSTRAP_CLIENT_SOURCE_PORT
+	int "LwM2M bootstrap client source port"
+	range 0 65535
+	depends on LWM2M_RD_CLIENT_SUPPORT_BOOTSTRAP
+	default 0
+	help
+	  Source port used to connect to LwM2M bootstrap server. Random source port when zero.
+
+config LWM2M_CLIENT_SOURCE_PORT
+	int "LwM2M client source port"
+	range 0 65535
+	default 0
+	help
+	  Source port used to connect to LwM2M server. Random source port when zero.
+
 config LWM2M_SERVER_DEFAULT_PMIN
 	int "Default server record PMIN"
 	default 0
