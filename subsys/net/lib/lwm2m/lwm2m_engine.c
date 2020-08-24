@@ -1002,7 +1002,8 @@ static int lwm2m_send_message(struct lwm2m_message *msg)
 		coap_pending_cycle(msg->pending);
 	}
 
-	rc = send(msg->ctx->sock_fd, msg->cpkt.data, msg->cpkt.offset, 0);
+	rc = sendto(msg->ctx->sock_fd, msg->cpkt.data, msg->cpkt.offset, 0, &msg->ctx->remote_addr,
+		    NET_SOCKADDR_MAX_SIZE);
 
 	if (rc < 0) {
 		LOG_ERR("Failed to send packet, err %d", errno);
@@ -4708,9 +4709,37 @@ int lwm2m_socket_start(struct lwm2m_ctx *client_ctx)
 	}
 #endif /* CONFIG_LWM2M_DTLS_SUPPORT */
 
-	if (connect(client_ctx->sock_fd, &client_ctx->remote_addr,
-		    NET_SOCKADDR_MAX_SIZE) < 0) {
-		LOG_ERR("Cannot connect UDP (-%d)", errno);
+	struct sockaddr_storage bind_addr = {};
+	socklen_t bind_addr_len;
+
+	switch (client_ctx->remote_addr.sa_family) {
+	case AF_INET: {
+		struct sockaddr_in *addr = (struct sockaddr_in *)&bind_addr;
+
+		addr->sin_family = AF_INET;
+		addr->sin_addr.s_addr = htonl(INADDR_ANY);
+		addr->sin_port = htons(0);
+		bind_addr_len = sizeof(struct sockaddr_in);
+		break;
+	}
+	case AF_INET6: {
+		struct sockaddr_in6 *addr = (struct sockaddr_in6 *)&bind_addr;
+
+		addr->sin6_family = AF_INET6;
+		addr->sin6_port = htons(20001);
+		addr->sin6_addr = in6addr_any;
+		bind_addr_len = sizeof(struct sockaddr_in6);
+		break;
+	}
+
+	default: {
+		lwm2m_engine_context_close(client_ctx);
+		return -errno;
+	}
+	}
+
+	if (bind(client_ctx->sock_fd, (struct sockaddr *)&bind_addr, bind_addr_len) < 0) {
+		LOG_ERR("Cannot bind UDP (-%d)", errno);
 		lwm2m_engine_context_close(client_ctx);
 		return -errno;
 	}
