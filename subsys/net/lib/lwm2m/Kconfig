@@ -244,6 +244,20 @@ config LWM2M_SERVER_DEFAULT_SSID
 	help
 	  When bootstrap is not enabled, access control needs a default owner.
 
+config LWM2M_RD_CLIENT_BOOTSTRAP_REQUEST_ACK_TIMEOUT
+	int "Bootstrap request ACK timeout"
+	depends on LWM2M_RD_CLIENT_SUPPORT_BOOTSTRAP
+	default 0
+	help
+	  CoAP ACK timeout for the boostrap request. 0 for default CoAP ACK behaviour
+
+config LWM2M_RD_CLIENT_BOOTSTRAP_REQUEST_MAX_RETRANSMIT
+	int "Bootstrap request max send attempts retransmit"
+	depends on LWM2M_RD_CLIENT_SUPPORT_BOOTSTRAP
+	default 4
+	help
+	  CoAP max send attempts for the boostrap request
+
 config LWM2M_PEER_PORT
 	int "LWM2M server port"
 	depends on LWM2M_RD_CLIENT_SUPPORT

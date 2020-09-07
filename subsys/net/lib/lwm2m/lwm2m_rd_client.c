@@ -704,6 +704,8 @@ static int sm_send_bootstrap_registration(void)
 	if (ret) {
 		goto cleanup;
 	}
+	msg->pending->timeout = CONFIG_LWM2M_RD_CLIENT_BOOTSTRAP_REQUEST_ACK_TIMEOUT;
+	msg->pending->retries = CONFIG_LWM2M_RD_CLIENT_BOOTSTRAP_REQUEST_MAX_RETRANSMIT;
 
 	/* TODO: handle return error */
 	coap_packet_append_option(&msg->cpkt, COAP_OPTION_URI_PATH,
