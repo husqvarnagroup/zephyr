@@ -751,6 +751,12 @@ static int sm_send_bootstrap_registration(void)
 		goto cleanup;
 	}
 
+#if defined(CONFIG_LWM2M_RD_CLIENT_BOOTSTRAP_REQUEST_GARDENA_STYLE)
+	msg->pending->timeout = CONFIG_LWM2M_RD_CLIENT_BOOTSTRAP_REQUEST_GARDENA_STYLE_ACK_TIMEOUT;
+	msg->pending->retries =
+		CONFIG_LWM2M_RD_CLIENT_BOOTSTRAP_REQUEST_GARDENA_STYLE_MAX_RETRANSMIT;
+#endif
+
 	ret = coap_packet_append_option(&msg->cpkt, COAP_OPTION_URI_PATH,
 					"bs", strlen("bs"));
 	if (ret < 0) {
@@ -1294,6 +1300,14 @@ static void sm_do_network_error(void)
 
 	lwm2m_socket_close(client.ctx);
 
+	/* Skip all the regular back-off and fallback mechanisms, restart the bootstrapping
+	 * procedure instead.
+	 */
+	if (client.ctx->bootstrap_mode &&
+	    IS_ENABLED(CONFIG_LWM2M_RD_CLIENT_BOOTSTRAP_REQUEST_GARDENA_STYLE)) {
+		goto restart_bootstraping;
+	}
+
 	if (client.retry_delay) {
 		next_event_at(k_uptime_get() + client.retry_delay * MSEC_PER_SEC);
 		client.retry_delay = 0;
@@ -1355,6 +1369,7 @@ static void sm_do_network_error(void)
 		goto stop_engine;
 	}
 
+restart_bootstraping:
 	/* Retry bootstrap */
 	if (IS_ENABLED(CONFIG_LWM2M_RD_CLIENT_SUPPORT_BOOTSTRAP)) {
 		if (client.ctx->bootstrap_mode) {

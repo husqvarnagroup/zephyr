@@ -243,6 +243,35 @@ config LWM2M_SERVER_DEFAULT_SSID
 	help
 	  When bootstrap is not enabled, access control needs a default owner.
 
+menuconfig LWM2M_RD_CLIENT_BOOTSTRAP_REQUEST_GARDENA_STYLE
+	bool "Bootstrap requests at a fixed interval"
+	depends on LWM2M_RD_CLIENT_SUPPORT_BOOTSTRAP
+	help
+	  This option changes the bootstrapping messages to be sent out at fixed intervalls, instead
+	  of some backoff.
+	  Chances are that this violate the LwM2M specs!
+
+if LWM2M_RD_CLIENT_BOOTSTRAP_REQUEST_GARDENA_STYLE
+
+config LWM2M_RD_CLIENT_BOOTSTRAP_REQUEST_GARDENA_STYLE_ACK_TIMEOUT
+	int "Max request ACK timeout"
+	default 4500
+	help
+	  Static CoAP ACK timeout [ms] for the boostrap request. If set to zero, the default backoff
+	  mechanism get used.
+
+	  Default value of 4500 ms causes the bootstrap to, if not completed, fail (and then
+	  restart) after ~5 seconds.
+
+config LWM2M_RD_CLIENT_BOOTSTRAP_REQUEST_GARDENA_STYLE_MAX_RETRANSMIT
+	int "Max send retransmits"
+	default 0
+	help
+	  Max re-attempts at the CoAP level for boostrap requests.
+	  Default value of 0 causes the bootstrap process to immediatelly fail, potentially restart.
+
+endif # LWM2M_RD_CLIENT_BOOTSTRAP_REQUEST_CUSTOM
+
 config LWM2M_PEER_PORT
 	int "LWM2M server port"
 	default 5683
