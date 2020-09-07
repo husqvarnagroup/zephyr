@@ -4267,7 +4267,7 @@ static void retransmit_request(struct k_work *work)
 		goto next;
 	}
 
-	LOG_INF("Resending message: %p", msg);
+	LOG_INF("Resending message: %d", msg->mid);
 	msg->send_attempts++;
 
 	ret = sys_mutex_lock(&client_ctx->send_lock, K_FOREVER);
