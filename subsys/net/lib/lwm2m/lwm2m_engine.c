@@ -4696,6 +4696,30 @@ static void socket_receive_loop(void)
 				continue;
 			}
 
+			bool is_multicast_remote_addr = false;
+			bool from_addr_matches_remote_addr = true;
+			struct sockaddr *expected_remote_address = &sock_ctx[i]->remote_addr;
+
+			if (sock_ctx[i]->remote_addr.sa_family == AF_INET) {
+				struct in_addr *remote_sin_addr =
+					&net_sin(expected_remote_address)->sin_addr;
+				is_multicast_remote_addr = net_ipv4_is_addr_mcast(remote_sin_addr);
+				from_addr_matches_remote_addr = net_ipv4_addr_cmp(
+					remote_sin_addr, &net_sin(&from_addr)->sin_addr);
+			} else if (sock_ctx[i]->remote_addr.sa_family == AF_INET6) {
+				struct in6_addr *remote_sin6_addr =
+					&net_sin6(expected_remote_address)->sin6_addr;
+				is_multicast_remote_addr = net_ipv6_is_addr_mcast(remote_sin6_addr);
+				from_addr_matches_remote_addr = net_ipv6_addr_cmp(
+					remote_sin6_addr, &net_sin6(&from_addr)->sin6_addr);
+			}
+
+			if (!is_multicast_remote_addr && !from_addr_matches_remote_addr) {
+				LOG_DBG("Ignoring packet from [%s], not matching remote address",
+					log_strdup(lwm2m_sprint_ip_addr(&from_addr)));
+				continue;
+			}
+
 			in_buf[len] = 0U;
 
 			lwm2m_udp_receive(sock_ctx[i], in_buf, len, &from_addr,
