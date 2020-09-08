@@ -701,6 +701,28 @@ static int socket_recv_message(struct lwm2m_ctx *client_ctx)
 		return 0;
 	}
 
+	bool is_multicast_remote_addr = false;
+	bool from_addr_matches_remote_addr = true;
+	struct sockaddr *expected_remote_address = &client_ctx->remote_addr;
+
+	if (expected_remote_address->sa_family == AF_INET) {
+		struct in_addr *remote_sin_addr = &net_sin(expected_remote_address)->sin_addr;
+		is_multicast_remote_addr = net_ipv4_is_addr_mcast(remote_sin_addr);
+		from_addr_matches_remote_addr =
+			net_ipv4_addr_cmp(remote_sin_addr, &net_sin(&from_addr)->sin_addr);
+	} else if (expected_remote_address->sa_family == AF_INET6) {
+		struct in6_addr *remote_sin6_addr = &net_sin6(expected_remote_address)->sin6_addr;
+		is_multicast_remote_addr = net_ipv6_is_addr_mcast(remote_sin6_addr);
+		from_addr_matches_remote_addr =
+			net_ipv6_addr_cmp(remote_sin6_addr, &net_sin6(&from_addr)->sin6_addr);
+	}
+
+	if (!is_multicast_remote_addr && !from_addr_matches_remote_addr) {
+		LOG_DBG("Ignoring packet from [%s], not matching remote address",
+			lwm2m_sprint_ip_addr(&from_addr));
+		return -EADDRNOTAVAIL;
+	}
+
 	in_buf[len] = 0U;
 	lwm2m_udp_receive(client_ctx, in_buf, len, &from_addr);
 
