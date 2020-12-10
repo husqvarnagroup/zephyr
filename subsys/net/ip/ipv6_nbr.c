@@ -903,6 +903,15 @@ enum net_verdict net_ipv6_prepare_for_send(struct net_pkt *pkt)
 	}
 
 try_send:
+#if defined(CONFIG_NET_L2_LEMONBEAT)
+	if (net_if_l2(iface) == &NET_L2_GET_NAME(LEMONBEAT)) {
+		/* On lb_radio interfaces, we use the compressed IPv6 address to create a link-local
+		 * address from. Therefore we skip the neighbor discovery here, so the packet will
+		 * be sent to the link-local address specified inside the IPv6 destination address.
+		 */
+		return NET_OK;
+	}
+#endif
 	net_ipv6_nbr_lock();
 
 	nbr = nbr_lookup(&net_neighbor.table, iface, nexthop);
