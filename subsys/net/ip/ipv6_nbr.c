@@ -895,6 +895,17 @@ ignore_frag_error:
 	}
 
 try_send:
+#if defined(CONFIG_NET_L2_LEMONBEAT)
+	if (net_if_l2(iface) == &NET_L2_GET_NAME(LEMONBEAT)) {
+		/* On lb_radio interfaces, we use the compressed ipv6
+		 * address to create a ll addr from. Therefore we
+		 * skip the neighbor discovery here, so the packet
+		 * wil be sent to the ll addr specified inside
+		 * the IPv6 destination address.
+		 */
+		return NET_OK;
+	}
+#endif
 	nbr = nbr_lookup(&net_neighbor.table, iface, nexthop);
 
 	NET_DBG("Neighbor lookup %p (%d) iface %p/%d addr %s state %s", nbr,
