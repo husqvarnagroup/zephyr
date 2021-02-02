@@ -339,6 +339,7 @@ success:
 	buf->flags = 0U;
 	buf->frags = NULL;
 	buf->size  = size;
+	buf->data  = buf->__buf;
 	net_buf_reset(buf);
 
 #if defined(CONFIG_NET_BUF_POOL_USAGE)
@@ -444,6 +445,7 @@ void net_buf_simple_reserve(struct net_buf_simple *buf, size_t reserve)
 	__ASSERT_NO_MSG(buf->len == 0U);
 	NET_BUF_DBG("buf %p reserve %zu", buf, reserve);
 
+	buf->size = buf->size + (buf->data - buf->__buf) - reserve;
 	buf->data = buf->__buf + reserve;
 }
 
@@ -1039,6 +1041,7 @@ void *net_buf_simple_push(struct net_buf_simple *buf, size_t len)
 	__ASSERT_NO_MSG(net_buf_simple_headroom(buf) >= len);
 
 	buf->data -= len;
+	buf->size += len;
 	buf->len += len;
 	return buf->data;
 }
@@ -1135,6 +1138,7 @@ void *net_buf_simple_pull(struct net_buf_simple *buf, size_t len)
 	__ASSERT_NO_MSG(buf->len >= len);
 
 	buf->len -= len;
+	buf->size -= len;
 	return buf->data += len;
 }
 
@@ -1148,6 +1152,7 @@ void *net_buf_simple_pull_mem(struct net_buf_simple *buf, size_t len)
 
 	buf->len -= len;
 	buf->data += len;
+	buf->size -= len;
 
 	return data;
 }
@@ -1277,5 +1282,5 @@ size_t net_buf_simple_headroom(struct net_buf_simple *buf)
 
 size_t net_buf_simple_tailroom(struct net_buf_simple *buf)
 {
-	return buf->size - net_buf_simple_headroom(buf) - buf->len;
+	return buf->size - buf->len;
 }

@@ -680,6 +680,92 @@ static void test_net_buf_byte_order(void)
 	net_buf_unref(buf);
 }
 
+
+static void test_net_buf_state(void)
+{
+	struct net_buf *buf;
+	struct net_buf_simple_state state;
+
+	buf = net_buf_alloc_len(&bufs_pool, 3, K_NO_WAIT);
+	zassert_not_null(buf, "Failed to get buffer");
+
+	/* Store first byte in buffer, save state */
+	net_buf_add_u8(buf, '0');
+	zassert_equal(0, net_buf_headroom(buf), "Headroom missmatch");
+	zassert_equal(1, net_buf_frags_len(buf), "Length missmatch");
+	zassert_equal(2, net_buf_tailroom(buf), "Tailroom missmatch");
+	zassert_mem_equal(buf->data, "0", buf->len, "Data missmatch");
+	net_buf_simple_save(&buf->b, &state);
+
+	/* Fill buffer, verify new buffer content */
+	net_buf_add_mem(buf, "12", 2);
+	zassert_equal(0, net_buf_headroom(buf), "Headroom missmatch");
+	zassert_equal(3, net_buf_frags_len(buf), "Length missmatch");
+	zassert_equal(0, net_buf_tailroom(buf), "Tailroom missmatch");
+	zassert_mem_equal(buf->data, "012", buf->len, "Data missmatch");
+
+	/* Restore buffer state, verify content */
+	net_buf_simple_restore(&buf->b, &state);
+	zassert_equal(0, net_buf_headroom(buf), "Headroom missmatch");
+	zassert_equal(1, net_buf_frags_len(buf), "Length missmatch");
+	zassert_equal(2, net_buf_tailroom(buf), "Tailroom missmatch");
+	zassert_mem_equal(buf->data, "0", buf->len, "Data missmatch");
+
+	net_buf_unref(buf);
+}
+
+static void test_net_buf_state_with_headroom(void)
+{
+	struct net_buf *buf;
+	struct net_buf_simple_state headroom, headroom_and_data, data_only;
+
+	destroy_called = 0;
+
+	buf = net_buf_alloc_len(&bufs_pool, 3, K_NO_WAIT);
+	zassert_not_null(buf, "Failed to get buffer");
+
+	/* Create and backup state "H--" (1x headroom, 2x unused bytes) */
+	net_buf_reserve(buf, 1);
+	zassert_equal(1, net_buf_headroom(buf), "Headroom missmatch");
+	zassert_equal(0, net_buf_frags_len(buf), "Length missmatch");
+	zassert_equal(2, net_buf_tailroom(buf), "Tailroom missmatch");
+	net_buf_simple_save(&buf->b, &headroom);
+
+	/* Create and backup state "H12" */
+	net_buf_add_mem(buf, "12", 2);
+	zassert_equal(1, net_buf_headroom(buf), "Headroom missmatch");
+	zassert_equal(2, net_buf_frags_len(buf), "Length missmatch");
+	zassert_equal(0, net_buf_tailroom(buf), "Tailroom missmatch");
+	net_buf_simple_save(&buf->b, &headroom_and_data);
+
+	/* Create and backup state "012" */
+	net_buf_push_u8(buf, '0');
+	zassert_equal(0, net_buf_headroom(buf), "Headroom missmatch");
+	zassert_equal(3, net_buf_frags_len(buf), "Length missmatch");
+	zassert_equal(0, net_buf_tailroom(buf), "Tailroom missmatch");
+	net_buf_simple_save(&buf->b, &data_only);
+
+	/* Restore and verify state "H--" */
+	net_buf_simple_restore(&buf->b, &headroom);
+	zassert_equal(1, net_buf_headroom(buf), "Headroom missmatch");
+	zassert_equal(0, net_buf_frags_len(buf), "Length missmatch");
+	zassert_equal(2, net_buf_tailroom(buf), "Tailroom missmatch");
+
+	/* Restore and verify state "H12" */
+	net_buf_simple_restore(&buf->b, &headroom_and_data);
+	zassert_equal(1, net_buf_headroom(buf), "Headroom missmatch");
+	zassert_equal(2, net_buf_frags_len(buf), "Length missmatch");
+	zassert_equal(0, net_buf_tailroom(buf), "Tailroom missmatch");
+
+	/* Restore and verify state "012" */
+	net_buf_simple_restore(&buf->b, &data_only);
+	zassert_equal(0, net_buf_headroom(buf), "Headroom missmatch");
+	zassert_equal(3, net_buf_frags_len(buf), "Length missmatch");
+	zassert_equal(0, net_buf_tailroom(buf), "Tailroom missmatch");
+
+	net_buf_unref(buf);
+}
+
 void test_main(void)
 {
 	ztest_test_suite(test_net_buf,
@@ -692,7 +778,9 @@ void test_main(void)
 			 ztest_unit_test(test_net_buf_clone),
 			 ztest_unit_test(test_net_buf_fixed_pool),
 			 ztest_unit_test(test_net_buf_var_pool),
-			 ztest_unit_test(test_net_buf_byte_order)
+			 ztest_unit_test(test_net_buf_byte_order),
+			 ztest_unit_test(test_net_buf_state),
+			 ztest_unit_test(test_net_buf_state_with_headroom)
 			 );
 
 	ztest_run_test_suite(test_net_buf);

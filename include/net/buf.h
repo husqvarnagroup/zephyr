@@ -91,7 +91,7 @@ struct net_buf_simple {
 	/** Length of the data behind the data pointer. */
 	uint16_t len;
 
-	/** Amount of data that this buffer can store. */
+	/** Amount of data this buffer can store behind the data pointer. */
 	uint16_t size;
 
 	/** Start of the data storage. Not to be accessed directly
@@ -166,6 +166,7 @@ void net_buf_simple_init_with_data(struct net_buf_simple *buf,
 static inline void net_buf_simple_reset(struct net_buf_simple *buf)
 {
 	buf->len  = 0U;
+	buf->size += (buf->data - buf->__buf);
 	buf->data = buf->__buf;
 }
 
@@ -841,6 +842,8 @@ struct net_buf_simple_state {
 	uint16_t offset;
 	/** Length of data */
 	uint16_t len;
+	/** Size of data */
+	uint16_t size;
 };
 
 /**
@@ -856,6 +859,7 @@ static inline void net_buf_simple_save(struct net_buf_simple *buf,
 {
 	state->offset = net_buf_simple_headroom(buf);
 	state->len = buf->len;
+	state->size = buf->size;
 }
 
 /**
@@ -872,6 +876,7 @@ static inline void net_buf_simple_restore(struct net_buf_simple *buf,
 {
 	buf->data = buf->__buf + state->offset;
 	buf->len = state->len;
+	buf->size = state->size;
 }
 
 /**
