@@ -537,7 +537,7 @@ class ZephyrBinaryRunner(abc.ABC):
         else:
             self.logger.info(escaped)
 
-    def call(self, cmd: List[str]) -> int:
+    def call(self, cmd: List[str], **kwargs) -> int:
         '''Subclass subprocess.call() wrapper.
 
         Subclasses should use this method to run command in a
@@ -547,9 +547,9 @@ class ZephyrBinaryRunner(abc.ABC):
         self._log_cmd(cmd)
         if _DRY_RUN:
             return 0
-        return subprocess.call(cmd)
+        return subprocess.call(cmd, **kwargs)
 
-    def check_call(self, cmd: List[str]):
+    def check_call(self, cmd: List[str], **kwargs):
         '''Subclass subprocess.check_call() wrapper.
 
         Subclasses should use this method to run command in a
@@ -559,7 +559,7 @@ class ZephyrBinaryRunner(abc.ABC):
         self._log_cmd(cmd)
         if _DRY_RUN:
             return
-        subprocess.check_call(cmd)
+        subprocess.check_call(cmd, **kwargs)
 
     def check_output(self, cmd: List[str], **kwargs) -> bytes:
         '''Subclass subprocess.check_output() wrapper.
