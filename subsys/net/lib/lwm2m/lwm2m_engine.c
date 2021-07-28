@@ -4824,7 +4824,12 @@ int lwm2m_socket_start(struct lwm2m_ctx *client_ctx)
 
 		addr->sin_family = AF_INET;
 		addr->sin_addr.s_addr = htonl(INADDR_ANY);
-		addr->sin_port = htons(0);
+		if (client_ctx->bootstrap_mode) {
+			addr->sin_port = htons(CONFIG_LWM2M_BOOTSTRAP_CLIENT_SOURCE_PORT);
+		} else {
+			addr->sin_port = htons(CONFIG_LWM2M_CLIENT_SOURCE_PORT);
+		}
+
 		bind_addr_len = sizeof(struct sockaddr_in);
 		break;
 	}
@@ -4832,7 +4837,11 @@ int lwm2m_socket_start(struct lwm2m_ctx *client_ctx)
 		struct sockaddr_in6 *addr = (struct sockaddr_in6 *)&bind_addr;
 
 		addr->sin6_family = AF_INET6;
-		addr->sin6_port = htons(20001);
+		if (client_ctx->bootstrap_mode) {
+			addr->sin6_port = htons(CONFIG_LWM2M_BOOTSTRAP_CLIENT_SOURCE_PORT);
+		} else {
+			addr->sin6_port = htons(CONFIG_LWM2M_CLIENT_SOURCE_PORT);
+		}
 		addr->sin6_addr = in6addr_any;
 		bind_addr_len = sizeof(struct sockaddr_in6);
 		break;
