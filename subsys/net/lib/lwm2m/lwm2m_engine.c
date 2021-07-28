@@ -5935,15 +5935,23 @@ int lwm2m_socket_start(struct lwm2m_ctx *client_ctx)
 		addr_len = sizeof(struct sockaddr_in);
 		addr->sin_family = AF_INET;
 		addr->sin_addr.s_addr = htonl(INADDR_ANY);
-		addr->sin_port = htons(0);
+		if (client_ctx->bootstrap_mode) {
+			addr->sin_port = htons(CONFIG_LWM2M_BOOTSTRAP_CLIENT_SOURCE_PORT);
+		} else {
+			addr->sin_port = htons(CONFIG_LWM2M_CLIENT_SOURCE_PORT);
+		}
 
 	} else if ((client_ctx->remote_addr).sa_family == AF_INET6) {
 		struct sockaddr_in6 *addr = (struct sockaddr_in6 *)&bind_addr;
 
 		addr_len = sizeof(struct sockaddr_in6);	
 		addr->sin6_family = AF_INET6;
-		addr->sin6_port = htons(20001);
 		addr->sin6_addr = in6addr_any;
+		if (client_ctx->bootstrap_mode) {
+			addr->sin6_port = htons(CONFIG_LWM2M_BOOTSTRAP_CLIENT_SOURCE_PORT);
+		} else {
+			addr->sin6_port = htons(CONFIG_LWM2M_CLIENT_SOURCE_PORT);
+		}
 	} else {
 		lwm2m_engine_context_close(client_ctx);
 		return -EPROTONOSUPPORT;
