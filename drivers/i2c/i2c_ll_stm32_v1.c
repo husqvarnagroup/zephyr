@@ -139,6 +139,7 @@ static void stm32_i2c_master_finish(const struct device *dev)
 	}
 #else
 	if (!data->smbalert_active) {
+		k_busy_wait(0); /* needs a minimal delay before disabling, function call is enough */
 		LL_I2C_Disable(i2c);
 	}
 #endif
