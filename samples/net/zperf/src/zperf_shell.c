@@ -1066,7 +1066,7 @@ static void zperf_init(const struct shell *shell)
 		if (ret < 0) {
 			shell_fprintf(shell, SHELL_WARNING,
 				      "Unable to set IP %s\n",
-				      DST_IP6ADDR);
+				      DST_IP6ADDR ? DST_IP6ADDR : "");
 		} else {
 			shell_fprintf(shell, SHELL_NORMAL,
 				      "Setting destination IP address %s\n",
@@ -1092,7 +1092,7 @@ static void zperf_init(const struct shell *shell)
 		if (ret < 0) {
 			shell_fprintf(shell, SHELL_WARNING,
 				      "Unable to set IP %s\n",
-				      DST_IP4ADDR);
+				      DST_IP4ADDR ? DST_IP4ADDR : "");
 		} else {
 			shell_fprintf(shell, SHELL_NORMAL,
 				      "Setting destination IP address %s\n",
