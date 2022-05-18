@@ -1,0 +1,55 @@
+# Copyright (c) 2021 GARDENA GmbH
+# SPDX-License-Identifier: Apache-2.0
+
+description: Silicon Labs Si4467 Sub-GHz transceiver
+
+compatible: "silabs,si4467"
+
+include: spi-device.yaml
+
+properties:
+    nirq-gpios:
+      type: phandle-array
+      required: true
+      description: Interrupt pin.
+
+        The interrupt pin nIRQ of Si4467 is active low input on the MCU.
+
+    nirq-handling-gpios:
+      type: phandle-array
+      required: false
+      description: Optional pin to analyze time spent handling the nIRQ.
+
+    sdn-gpios:
+      type: phandle-array
+      required: true
+      description: Shutdown pin.
+
+        The shutdown (SDN) pin of Si4467 is active high.
+
+    gpio-gpios:
+      type: phandle-array
+      required: true
+      description: GPIO 0-3
+
+        The GPIOs 0-3 pins of Si4467.
+
+    xtal-frequency:
+      type: int
+      required: true
+      description: Clock frequency of XTAL in Hz
+
+    rx-enable-gpios:
+      type: phandle-array
+      required: false
+      description: RX enable pin. Controls the TX/RX switch.
+
+    tx-enable-gpios:
+      type: phandle-array
+      required: false
+      description: TX enable pin. Controls the TX/RX switch.
+
+    ant-diversity-gpios:
+      type: phandle-array
+      required: false
+      description: Antenna diversity pin. Controls the antenna selection switch.

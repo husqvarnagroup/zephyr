@@ -1,0 +1,5 @@
+# Copyright (c) 2020 GARDENA GmbH
+
+config SHIELD_EZRADIOPRO_DK_SI4467
+	def_bool $(shields_list_contains,ezradiopro_dk_si4467) || $(shields_list_contains,ezradiopro_dk_si4467_v2) \
+	      || $(shields_list_contains,ezradiopro_dk_si4467_arduino)

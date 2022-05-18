@@ -1,0 +1,40 @@
+/*
+ * Copyright (c) 2020 GARDENA GmbH
+ */
+
+/ {
+	aliases {
+		clock-test-pin = &led0;
+	};
+};
+
+&spi1 {
+	status = "okay";
+	sck-pin = <36>;
+	mosi-pin = <37>;
+	miso-pin = <38>;
+	cs-gpios = <&gpio1 3 GPIO_ACTIVE_LOW>;
+
+	si4467@0 {
+		compatible = "silabs,si4467";
+		label = "Si4467";
+		spi-max-frequency = <10000000>;
+		xtal-frequency = <26000000>;
+		reg = <0>;
+		gpio-gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>,
+			     <&gpio1 11 GPIO_ACTIVE_HIGH>,
+			     <&gpio1 12 GPIO_ACTIVE_HIGH>,
+			     <&gpio1 13 GPIO_ACTIVE_HIGH>;
+		sdn-gpios    = <&gpio1 14 GPIO_ACTIVE_HIGH>;
+		nirq-gpios   = <&gpio1 15 GPIO_ACTIVE_LOW>;
+		nirq-handling-gpios   = <&gpio1 7 (GPIO_PUSH_PULL | GPIO_ACTIVE_LOW)>;
+	};
+};
+
+&spi3 {
+	status = "disabled";
+};
+
+&qspi {
+	status = "disabled";
+};
