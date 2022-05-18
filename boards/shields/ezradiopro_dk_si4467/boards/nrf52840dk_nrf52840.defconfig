@@ -1,0 +1,8 @@
+# Copyright (c) 2020 GARDENA GmbH
+
+if SHIELD_EZRADIOPRO_DK_SI4467
+
+config SPI_NRFX
+	default y
+
+endif   # SHIELD_EZRADIOPRO_DK_SI4467

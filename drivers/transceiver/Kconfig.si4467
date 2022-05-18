@@ -1,0 +1,106 @@
+# Silicon Labs Si4467 configuration options
+
+# Copyright (c) 2020 GARDENA GmbH
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig TRX_SI4467
+	bool "Silicon Labs 4467 Driver"
+	select SPI
+	select GPIO
+	select NET_BUF
+	select LOG2_ALWAYS_RUNTIME if LOG
+
+if TRX_SI4467
+
+config TRX_SI4467_DRV_NAME
+	string "Silicon Labs 4467 Driver's Name"
+	default "TRX_SI4467"
+	help
+	  This option sets the driver name.
+
+config TRX_SI4467_APPLY_PATCH
+	bool "Apply patch before power up"
+	default y
+	help
+	  Enables patching the Si4467 before power up. This fixes several
+	  problems (see "EZRadio and EZRadio Pro Family Rev C2A/A2A Device
+	  Errata"), but adds about 15-26 ms boot time and increases the
+	  application size by about 1 kB.
+
+config TRX_SI4467_RX_STACK_SIZE
+int "Driver's internal RX thread stack size"
+	default 2048
+	help
+	  This option sets the driver's stack size for its internal RX thread.
+	  The default value should be sufficient, but in case it proves to be
+	  a too little one, this option makes it easy to play with the size.
+
+config TRX_SI4467_SHELL
+	bool "Enable Si4467 shell module"
+	default y
+	select SHELL
+	help
+	  This can be used for testing Si4467 through the console via exposing
+	  a shell module named "si4467".
+
+config TRX_SI4467_RANDOM_MAC
+	bool "Random MAC address"
+	default y
+	help
+	  Generate a random MAC address dynamically.
+
+config TRX_SI4467_NIRQ_DEBUG
+	bool "Toggle a pin while working on a nIRQ request"
+	help
+	  This option is intended to allow analyzing the time being spent in
+	  the nIRQ interrupt handler using a logic analyzer. nirq-handling-gpios
+	  must be configured in the device tree to use this.
+
+config TRX_SI4467_RX_TX_GPIO
+	bool "Use Si4467 GPIO 2/3 to indicate RX/TX state"
+	help
+	  This option configures Si4467 GPIO 2 to RX mode and GPIO 3 to TX mode.
+	  This is useful for debugging or to control external hardware (such as
+	  PA or LNA). This option is not needed when controlling external PA or
+	  LNA from the MCU.
+
+config TRX_SI4467_RF_CONTROL_RX_HANDLING
+	bool "Toggle a pin to control an external RX component (e.g. LNA)"
+	help
+	  When enabled, a GPIO pin of the MCU is used to control external
+	  components needed for RX, such as an LNA. This option is not needed,
+	  if external components are controlled directly by a GPIO of the
+	  Si4467. rx-enable-gpios must be configured in the device tree to use
+	  this.
+
+config TRX_SI4467_RF_CONTROL_TX_HANDLING
+	bool "Toggle a pin to control external TX components (e.g. PA)"
+	help
+	  When enabled, a GPIO pin of the MCU is used to control external
+	  components needed for TX, such as an PA. This option is not needed,
+	  if external components are controlled directly by a GPIO of the
+	  Si4467. tx-enable-gpios must be configured in the device tree to use
+	  this.
+
+config TRX_SI4467_ANTENNA_DIVERSITY_HANDLING
+	bool "Toggle a pin to control antenna diversity"
+	help
+	  When enabled, a GPIO pin of the MCU is used to control an external
+	  RF switch for antenna diversity. ant-diversity-gpios must be
+	  configured in the device tree to use this.
+
+config TRX_SI4467_CALIBRATION_PERSISTENT_STORAGE
+	bool "Use persistent calibration data storage for crystal tuning value"
+	select SETTINGS
+	help
+	  When enabled, Zephyr settings subsystem can be used to persistently
+	  store calibration data.
+
+config TRX_SI4467_CALIBRATION_SETTING_NAME
+	string "Name to use for storing Si4467 calibration data in settings"
+	default "factory/si4467_calibration"
+	depends on TRX_SI4467_CALIBRATION_PERSISTENT_STORAGE
+	help
+	  This option sets name for the Si4467 calibration data setting.
+
+endif

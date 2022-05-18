@@ -1,0 +1,23 @@
+/*
+ * Copyright (c) 2022 Lemonbeat GmbH
+ */
+
+&arduino_spi {
+	status = "okay";
+
+	cs-gpios = <&arduino_header 16 GPIO_ACTIVE_LOW>;   /* D10 */
+
+	si4467@0 {
+		compatible = "silabs,si4467";
+		reg = <0>;
+		label = "si4467";
+		spi-max-frequency = <10000000>;
+		xtal-frequency = <26000000>;
+		gpio-gpios = <&arduino_header 14 GPIO_ACTIVE_HIGH>,	   /* GP0 is D8 */
+		             <&arduino_header 15 GPIO_ACTIVE_HIGH>,	   /* GP1 is D9 */
+			     <&arduino_header 12 GPIO_ACTIVE_HIGH>,	   /* GP2 is D6 */
+			     <&arduino_header 13 GPIO_ACTIVE_HIGH>;	   /* GP3 is D7 */
+		sdn-gpios  = <&arduino_header 10 GPIO_ACTIVE_HIGH>;	   /* SDN is D4 */
+		nirq-gpios = <&arduino_header 11 GPIO_ACTIVE_LOW>;	   /* nIRQ is D5 */
+	};
+};

@@ -1,0 +1,17 @@
+# Copyright (c) 2020 GARDENA GmbH
+
+if SHIELD_EZRADIOPRO_DK_SI4467
+
+config SPI
+	default y
+
+config TRX
+	default y
+
+config TRX_SI4467
+	default y
+
+config TRX_SI4467_RX_TX_GPIO
+	default y
+
+endif   # SHIELD_EZRADIOPRO_DK_SI4467

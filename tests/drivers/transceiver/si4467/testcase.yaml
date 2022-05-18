@@ -1,0 +1,5 @@
+tests:
+  drivers.transceiver.si4467.nrf52840dk_nrf52840:
+    platform_allow: nrf52840dk_nrf52840
+    tags: testing
+    extra_args: SHIELD=ezradiopro_dk_si4467_v2
