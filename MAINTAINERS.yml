@@ -2110,6 +2110,20 @@ Xen Platform:
   labels:
     - "area: Xen Platform"
 
+Factory data:
+  status: maintained
+  maintainers:
+    - rettichschnidi
+  files:
+    - include/zephyr/factory_data
+    - samples/subsys/factory_data/
+    - subsys/factory_data/
+    - tests/subsys/factory_data/
+  labels:
+    - "area: Factory Data"
+  tests:
+    - factory_data
+
 Filesystems:
   status: maintained
   maintainers:
