@@ -1,0 +1,6 @@
+tests:
+  samples.factory_data:
+    platform_allow: >
+      native_sim
+      native_sim/native/64
+    tags: factory_data
