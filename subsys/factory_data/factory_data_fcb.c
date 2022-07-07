@@ -104,6 +104,11 @@ static int factory_data_value_exists_callback(struct fcb_entry_ctx *const loc_ct
 		__ASSERT(false, "Zero length names are not allowed");
 		return -EIO;
 	}
+
+	if (name_len != strlen(name)) {
+		return 0;
+	}
+
 	return memcmp(name, buf, name_len) == 0; /* positive return value on match */
 }
 
