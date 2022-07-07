@@ -250,7 +250,7 @@ static int factory_data_load_callback(struct fcb_entry_ctx *const loc_ctx, void 
 	size_t name_len;
 	size_t value_len;
 
-	if (fcb_entry_len >= sizeof(buf)) {
+	if (fcb_entry_len > sizeof(buf)) {
 		/*
 		 * Could happen when max name and/or value length Kconfig values got lowered and
 		 * existing, big data gets loaded
