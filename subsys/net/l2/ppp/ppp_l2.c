@@ -190,10 +190,10 @@ static int ppp_send(struct net_if *iface, struct net_pkt *pkt)
 	return ret;
 }
 
-static void ppp_close(struct ppp_context *ctx)
+static void ppp_lower_down(struct ppp_context *ctx)
 {
 	if (ppp_lcp) {
-		ppp_lcp->close(ctx, "Shutdown");
+		ppp_lcp->lower_down(ctx);
 	}
 }
 
@@ -230,7 +230,7 @@ static int ppp_enable(struct net_if *iface, bool state)
 	ctx->is_enabled = state;
 
 	if (!state) {
-		ppp_close(ctx);
+		ppp_lower_down(ctx);
 
 		if (ppp->stop) {
 			ppp->stop(net_if_get_device(iface));
@@ -284,15 +284,11 @@ static void carrier_on_off(struct k_work *work)
 		ppp_mgmt_raise_carrier_on_event(ctx->iface);
 		net_if_up(ctx->iface);
 	} else {
-		if (ppp_lcp) {
-			ppp_lcp->close(ctx, "Shutdown");
-			/* signaling for the carrier off event is done from the LCP callback */
-		} else {
-			ppp_change_phase(ctx, PPP_DEAD);
+		ppp_lower_down(ctx);
+		ppp_change_phase(ctx, PPP_DEAD);
 
-			ppp_mgmt_raise_carrier_off_event(ctx->iface);
-			net_if_carrier_down(ctx->iface);
-		}
+		ppp_mgmt_raise_carrier_off_event(ctx->iface);
+		net_if_carrier_down(ctx->iface);
 	}
 }
 
