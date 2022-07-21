@@ -164,7 +164,7 @@ int factory_data_save_one(const char *const name, const void *const value, const
 		goto exit_unlock;
 	}
 
-	/* Write all of the name except for the remaining bytes which do no align */
+	/* Write all of the name except for the remaining bytes which do not align nicely */
 	w_size = remaining - remaining % factory_data_fcb.f_align;
 	ret = flash_area_write(factory_data_fcb.fap, FCB_ENTRY_FA_DATA_OFF(loc.loc), name, w_size);
 	if (ret) {
@@ -193,7 +193,7 @@ int factory_data_save_one(const char *const name, const void *const value, const
 		/* Pad writing buffer/size to match write alignment needs */
 		if (w_size < sizeof(w_buf) && (w_size % factory_data_fcb.f_align) != 0) {
 			add = factory_data_fcb.f_align - w_size % factory_data_fcb.f_align;
-			memset(w_buf + w_size, '\0', add);
+			memset(w_buf + w_size, factory_data_fcb.f_erase_value, add);
 			w_size += add;
 		}
 		ret = flash_area_write(factory_data_fcb.fap,
