@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <factory_data/factory_data.h>
-#include <shell/shell.h>
-#include <sys/util.h>
-#include <toolchain.h>
-
 #include <stdint.h>
+
+#include <zephyr/factory_data/factory_data.h>
+#include <zephyr/shell/shell.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/toolchain.h>
 
 static int cmd_write(const struct shell *shell_ptr, size_t argc, char *argv[])
 {

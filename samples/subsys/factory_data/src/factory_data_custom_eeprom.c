@@ -4,13 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 
-#include <zephyr/factory_data/factory_data.h>
 #include <zephyr/drivers/eeprom.h>
-
-#include <errno.h>
+#include <zephyr/factory_data/factory_data.h>
 
 #define sample_factory_data_magic 0xfac70123
 

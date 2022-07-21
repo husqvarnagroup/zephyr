@@ -4,15 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "factory_data/factory_data.h"
-
-#include <kernel.h>
-#include <storage/flash_map.h>
-
 #include <assert.h>
 #include <errno.h>
 #include <stdint.h>
 #include <string.h>
+
+#include <zephyr/factory_data/factory_data.h>
+#include <zephyr/kernel.h>
+#include <zephyr/storage/flash_map.h>
 
 /* Copied from bootutil_public.h */
 #ifndef ALIGN_UP

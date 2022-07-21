@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <string.h>
+
 #include <zephyr/factory_data/factory_data.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/util.h>
-
-#include <string.h>
 
 struct factory_data {
 	uint8_t uuid[16];

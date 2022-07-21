@@ -6,7 +6,6 @@
 
 #include <factory_data/factory_data.h>
 #include <storage/flash_map.h>
-
 #include <ztest.h>
 #include <ztest_error_hook.h>
 

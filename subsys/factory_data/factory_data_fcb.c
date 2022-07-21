@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <factory_data/factory_data.h>
 #include "factory_data_common.h"
-
-#include <fs/fcb.h>
-#include <storage/flash_map.h>
 
 #include <stdint.h>
 #include <string.h>
+
+#include <zephyr/factory_data/factory_data.h>
+#include <zephyr/fs/fcb.h>
+#include <zephyr/storage/flash_map.h>
 
 static struct flash_sector factory_data_fcb_areas[CONFIG_FACTORY_DATA_FCB_NUM_AREAS + 1];
 

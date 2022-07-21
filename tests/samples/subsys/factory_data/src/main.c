@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <factory_data/factory_data.h>
 #include <zephyr/drivers/eeprom.h>
 
+#include <factory_data/factory_data.h>
 #include <ztest.h>
 #include <ztest_error_hook.h>
 

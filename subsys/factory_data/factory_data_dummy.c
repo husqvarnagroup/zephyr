@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "factory_data/factory_data.h"
-
 #include <errno.h>
 #include <stdint.h>
+
+#include <zephyr/factory_data/factory_data.h>
 
 int factory_data_init(void)
 {
