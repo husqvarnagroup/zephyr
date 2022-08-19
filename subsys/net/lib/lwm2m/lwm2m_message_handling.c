@@ -2254,6 +2254,14 @@ static int lwm2m_exec_handler(struct lwm2m_message *msg)
 	return -ENOENT;
 }
 
+/* post-write operation callback */
+static lwm2m_engine_post_op_cb_t post_write_op_cb = NULL;
+
+void lwm2m_engine_register_post_write_op_callback(lwm2m_engine_post_op_cb_t cb)
+{
+	post_write_op_cb = cb;
+}
+
 static int handle_request(struct coap_packet *request, struct lwm2m_message *msg)
 {
 	int r;
@@ -2550,6 +2558,10 @@ static int handle_request(struct coap_packet *request, struct lwm2m_message *msg
 
 	if (r < 0) {
 		goto error;
+	}
+
+	if ((LWM2M_OP_WRITE == msg->operation) && post_write_op_cb) {
+		post_write_op_cb();
 	}
 
 	return 0;

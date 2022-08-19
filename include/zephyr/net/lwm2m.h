@@ -327,6 +327,17 @@ typedef void *(*lwm2m_engine_get_data_cb_t)(uint16_t obj_inst_id,
 					    size_t *data_len);
 
 /**
+ * @brief Asynchronous callback to get notified that LWM2M request is processed.
+ *
+ * The engine uses this callback to indicate that LWM2M request processing has successfully
+ * completed and no further callbacks related to it will be executed.
+ *
+ * The client can register a function of this type via:
+ * lwm2m_engine_register_post_write_op_callback()
+ */
+typedef void (*lwm2m_engine_post_op_cb_t)(void);
+
+/**
  * @brief Asynchronous callback when data has been set to a resource buffer.
  *
  * After changing the data of a resource buffer, the LwM2M engine can
@@ -1230,6 +1241,18 @@ int lwm2m_register_validate_callback(const struct lwm2m_obj_path *path,
  */
 int lwm2m_register_post_write_callback(const struct lwm2m_obj_path *path,
 				       lwm2m_engine_set_data_cb_t cb);
+
+/**
+ * @brief Set post-write operation callback
+ *
+ * This callback is triggered after completion of processing of write request.
+ *
+ * It allows an LwM2M client to decide when to process an object in case there were multiple
+ * resources updated via a single request.
+ *
+ * @param[in] cb Post-write operation callback (could be NULL).
+ */
+void lwm2m_engine_register_post_write_op_callback(lwm2m_engine_post_op_cb_t cb);
 
 /**
  * @brief Set resource execute event callback
