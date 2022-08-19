@@ -162,6 +162,8 @@ static struct lwm2m_engine_obj_inst *get_engine_obj_inst(int obj_id,
 /* Shared set of in-flight LwM2M messages */
 static struct lwm2m_message messages[CONFIG_LWM2M_ENGINE_MAX_MESSAGES];
 
+static lwm2m_engine_post_op_cb_t post_write_op_cb = NULL;
+
 /* Forward declarations. */
 static int path_to_objs(const struct lwm2m_obj_path *path,
 			struct lwm2m_engine_obj_inst **obj_inst,
@@ -2903,6 +2905,11 @@ int lwm2m_engine_register_validate_callback(const char *pathstr,
 #endif /* CONFIG_LWM2M_ENGINE_VALIDATION_BUFFER_SIZE > 0 */
 }
 
+void lwm2m_engine_register_post_write_op_callback(lwm2m_engine_post_op_cb_t cb)
+{
+	post_write_op_cb = cb;
+}
+
 int lwm2m_engine_register_post_write_callback(const char *pathstr,
 					 lwm2m_engine_set_data_cb_t cb)
 {
@@ -4966,6 +4973,9 @@ static int handle_request(struct coap_packet *request,
 		}
 	}
 
+	if ((LWM2M_OP_WRITE == msg->operation) && post_write_op_cb) {
+		post_write_op_cb();
+	}
 	return 0;
 
 error:
