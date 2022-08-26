@@ -340,6 +340,7 @@ int lwm2m_notify_observer_path(const struct lwm2m_obj_path *path)
 	struct notification_attrs nattrs = {0};
 	int64_t timestamp;
 	int ret = 0;
+	int rc;
 	int i;
 	struct lwm2m_ctx **sock_ctx = lwm2m_sock_ctx();
 
@@ -352,10 +353,10 @@ int lwm2m_notify_observer_path(const struct lwm2m_obj_path *path)
 		SYS_SLIST_FOR_EACH_CONTAINER(&sock_ctx[i]->observer, obs, node) {
 			if (lwm2m_notify_observer_list(&obs->path_list, path)) {
 				/* update the event time for this observer */
-				ret = engine_observe_attribute_list_get(&obs->path_list, &nattrs,
-									sock_ctx[i]->srv_obj_inst);
-				if (ret < 0) {
-					return ret;
+				rc = engine_observe_attribute_list_get(
+					&obs->path_list, &nattrs, sock_ctx[i]->srv_obj_inst);
+				if (rc < 0) {
+					return rc;
 				}
 
 				if (nattrs.pmin) {
