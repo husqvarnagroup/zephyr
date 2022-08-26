@@ -46,6 +46,7 @@
 /* TODO: */
 #define NOTIFY_OBSERVER(o, i, r)	lwm2m_notify_observer(o, i, r)
 #define NOTIFY_OBSERVER_PATH(path)	lwm2m_notify_observer_path(path)
+#define FORCE_NOTIFY_OBSERVER_PATH(path)	lwm2m_force_notify_observer_path(path)
 
 /* Use this value to generate new token */
 #define LWM2M_MSG_TOKEN_GENERATE_NEW 0xFFU
@@ -71,6 +72,7 @@ char *lwm2m_sprint_ip_addr(const struct sockaddr *addr);
 
 int lwm2m_notify_observer(uint16_t obj_id, uint16_t obj_inst_id, uint16_t res_id);
 int lwm2m_notify_observer_path(struct lwm2m_obj_path *path);
+int lwm2m_force_notify_observer_path(struct lwm2m_obj_path *path);
 
 void lwm2m_register_obj(struct lwm2m_engine_obj *obj);
 void lwm2m_unregister_obj(struct lwm2m_engine_obj *obj);

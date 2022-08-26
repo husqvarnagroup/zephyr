@@ -632,6 +632,47 @@ int lwm2m_notify_observer_path(struct lwm2m_obj_path *path)
 	}
 
 	return ret;
+}
+
+int lwm2m_force_notify_observer_path(struct lwm2m_obj_path *path)
+{
+	struct observe_node *obs;
+	struct notification_attrs nattrs = { 0 };
+	int ret = 0;
+	int rc;
+	int i;
+
+	LOG_INF("Force-notifying observer path %d/%d/%d[:%d] (%d)",
+		(int) path->obj_id,
+		(int) path->obj_inst_id,
+		(int) path->res_id,
+		(int) path->level,
+		(int)sock_nfds);
+
+	/* look for observers which match our resource */
+	for (i = 0; i < sock_nfds; ++i) {
+		SYS_SLIST_FOR_EACH_CONTAINER(&sock_ctx[i]->observer, obs, node) {
+			if (lwm2m_notify_observer_list(&obs->path_list, path)) {
+				/* update the event time for this observer */
+				rc = engine_observe_attribute_list_get(&obs->path_list, &nattrs,
+									sock_ctx[i]->srv_obj_inst);
+				if (rc < 0) {
+					LOG_INF("Not exists: %d",  (int)ret);
+					return rc;
+				}
+
+				/* Trigger immediately */
+				obs->resource_update = path->level >= LWM2M_PATH_LEVEL_RESOURCE;
+				obs->event_timestamp = k_uptime_get();
+
+				LOG_WRN("FORCE NOTIFY EVENT %u/%u/%u[:%d]", path->obj_id, path->obj_inst_id,
+					path->res_id, (int)	path->level);
+				ret++;
+			}
+		}
+	}
+
+	return ret;
 
 }
 
