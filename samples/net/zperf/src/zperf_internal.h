@@ -35,7 +35,7 @@
 #define DST_IP4ADDR NULL
 #endif
 
-#define PACKET_SIZE_MAX      1024
+#define PACKET_SIZE_MAX      2048
 
 struct zperf_udp_datagram {
 	int32_t id;
