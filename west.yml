@@ -45,7 +45,7 @@ manifest:
       groups:
         - tools
     - name: fatfs
-      revision: a30531af3a95a9a3ea7d771ea8a578ebfed45514
+      revision: 44c0080876f28a193085078c7381908f7fbc1bbc
       path: modules/fs/fatfs
       groups:
         - fs

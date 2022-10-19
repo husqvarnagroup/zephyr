@@ -155,6 +155,11 @@ config FS_FATFS_WINDOW_ALIGNMENT
 	  that, in worst scenario, value provided here may cause FATFS
 	  structure to have size of twice the value
 
+config FS_FATFS_REENTRANT
+	bool "FatFs reentrant"
+	help
+	  Enable the re-entrancy (thread safe) option of the FatFs
+
 endmenu
 
 endif # FAT_FILESYSTEM_ELM
