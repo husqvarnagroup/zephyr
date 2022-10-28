@@ -20,7 +20,7 @@ extern "C" {
 	(CONFIG_FACTORY_DATA_NAME_LEN_MAX + 1 /* '\0' */ + CONFIG_FACTORY_DATA_VALUE_LEN_MAX)
 
 /* Relevant only when backed by flash */
-#define FACTORY_DATA_FLASH_PARTITION FLASH_AREA_ID(factory)
+#define FACTORY_DATA_FLASH_PARTITION FIXED_PARTITION_ID(factory_partition)
 
 /**
  * @brief Public API of the factory data module.
