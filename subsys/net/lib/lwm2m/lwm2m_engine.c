@@ -647,8 +647,7 @@ static int socket_recv_message(struct lwm2m_ctx *client_ctx)
 	}
 
 	if (!is_multicast_remote_addr && !from_addr_matches_remote_addr) {
-		LOG_DBG("Ignoring packet from [%s], not matching remote address",
-				log_strdup(lwm2m_sprint_ip_addr(&from_addr)));
+		LOG_DBG("Ignoring packet from [%s], not matching remote address", lwm2m_sprint_ip_addr(&from_addr));
 		return -errno;
 	}
 

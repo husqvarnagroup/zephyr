@@ -387,8 +387,7 @@ static int do_bootstrap_reply_cb(const struct coap_packet *response,
 
 		if (remote_addr_is_multicast) {
 			net_ipaddr_copy(&client.ctx->remote_addr, from);
-			LOG_DBG("Updated remote address from multicast to [%s]",
-				log_strdup(lwm2m_sprint_ip_addr(from)));
+			LOG_DBG("Updated remote address from multicast to [%s]", lwm2m_sprint_ip_addr(from));
 		}
 
 		set_sm_state(ENGINE_BOOTSTRAP_REG_DONE);
