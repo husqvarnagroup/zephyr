@@ -295,8 +295,8 @@ static inline int16_t get_frees(struct net_buf_pool *pool)
 void net_pkt_print_frags(struct net_pkt *pkt)
 {
 	struct net_buf *frag;
-	size_t total = 0;
-	int count = 0, frag_size = 0;
+	size_t total_len = 0;
+	int count = 0, total_size = 0;
 
 	if (!pkt) {
 		NET_INFO("pkt %p", pkt);
@@ -309,13 +309,13 @@ void net_pkt_print_frags(struct net_pkt *pkt)
 
 	frag = pkt->frags;
 	while (frag) {
-		total += frag->len;
+		total_len += frag->len;
 
-		frag_size = frag->size;
+		total_size += frag->size;
 
 		NET_INFO("[%d] frag %p len %d max len %u size %d pool %p",
 			 count, frag, frag->len, net_buf_max_len(frag),
-			 frag_size, net_buf_pool_get(frag->pool_id));
+			 frag->size, net_buf_pool_get(frag->pool_id));
 
 		count++;
 
@@ -323,8 +323,8 @@ void net_pkt_print_frags(struct net_pkt *pkt)
 	}
 
 	NET_INFO("Total data size %zu, occupied %d bytes, utilization %zu%%",
-		 total, count * frag_size,
-		 count ? (total * 100) / (count * frag_size) : 0);
+		 total_len, total_size,
+		 count ? (total_len * 100) / total_size : 0);
 }
 #endif
 
