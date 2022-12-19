@@ -1354,6 +1354,8 @@ int lwm2m_rd_client_stop(struct lwm2m_ctx *client_ctx,
 	if (sm_is_registered() && deregister) {
 		set_sm_state(ENGINE_DEREGISTER);
 	} else {
+		/* Clear Possible pending RD Client message */
+		lwm2m_reset_message(lwm2m_get_ongoing_rd_msg(), true);
 		set_sm_state(ENGINE_DEREGISTERED);
 	}
 
