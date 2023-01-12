@@ -1328,6 +1328,9 @@ int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst, struct lwm2m_eng
 	}
 
 	res_inst->data_len = len;
+#ifdef CONFIG_SG_LIB_LWM2M_AUTO_SEND
+	res_inst->dirty = res_inst->report_after_write;
+#endif
 
 	if (LWM2M_HAS_PERM(obj_field, LWM2M_PERM_R)) {
 		lwm2m_notify_observer_path(&msg->path);
@@ -3552,8 +3555,15 @@ static void do_send_timeout_cb(struct lwm2m_message *msg)
 	if (msg->send_status_cb) {
 		msg->send_status_cb(LWM2M_SEND_STATUS_TIMEOUT);
 	}
-	LOG_WRN("Send Timeout");
+#if defined(CONFIG_LWM2M_ENGINE_SEND_TIMEOUT_FULL_REGISTRATION)
+	LOG_WRN("Send timeout - Re-registering");
 	lwm2m_rd_client_timeout(msg->ctx);
+#elif defined(CONFIG_LWM2M_ENGINE_SEND_TIMEOUT_ATTEMPT_REGISTRATION_UPDATE)
+	LOG_WRN("Send timeout - Attempting to update registration");
+	lwm2m_rd_client_update();
+#elif defined(CONFIG_LWM2M_ENGINE_SEND_TIMEOUT_DO_NOTHING)
+	LOG_WRN("Send timeout - Doing nothing");
+#endif
 }
 
 #if defined(CONFIG_LWM2M_RESOURCE_DATA_CACHE_SUPPORT)
