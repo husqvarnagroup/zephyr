@@ -1499,7 +1499,7 @@ void lwm2m_engine_free_list(sys_slist_t *path_list, sys_slist_t *free_list)
 
 void lwm2m_engine_path_list_init(sys_slist_t *lwm2m_path_list, sys_slist_t *lwm2m_free_list,
 				 struct lwm2m_obj_path_list path_object_buf[],
-				 uint8_t path_object_size)
+				 uint16_t path_object_size)
 {
 	/* Init list */
 	sys_slist_init(lwm2m_path_list);

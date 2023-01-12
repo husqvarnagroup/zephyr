@@ -1416,6 +1416,9 @@ int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst, struct lwm2m_eng
 	}
 
 	res_inst->data_len = len;
+#ifdef CONFIG_LWM2M_ENGINE_AUTO_SEND
+	res_inst->dirty = res_inst->report_after_write;
+#endif
 
 	if (LWM2M_HAS_PERM(obj_field, LWM2M_PERM_R)) {
 		lwm2m_notify_observer_path(&msg->path);

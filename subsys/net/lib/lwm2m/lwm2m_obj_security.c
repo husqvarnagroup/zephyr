@@ -147,6 +147,12 @@ static struct lwm2m_engine_obj_inst *security_create(uint16_t obj_inst_id)
 		     sizeof(res[index][0]) * ARRAY_SIZE(res[index]));
 	init_res_instance(res_inst[index], ARRAY_SIZE(res_inst[index]));
 
+#if defined(CONFIG_LWM2M_ENGINE_AUTO_SEND)
+	for (size_t res_index = 0; res_index < ARRAY_SIZE(res_inst[index]); res_index++) {
+		res_inst[index][res_index].ignore = true;
+	}
+#endif
+
 	/* initialize instance resource data */
 	INIT_OBJ_RES_DATA_LEN(SECURITY_SERVER_URI_ID, res[index], i,
 			  res_inst[index], j,

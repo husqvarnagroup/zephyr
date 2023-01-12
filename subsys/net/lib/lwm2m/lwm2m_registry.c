@@ -487,10 +487,75 @@ int lwm2m_set_res_buf(const struct lwm2m_obj_path *path, void *buffer_ptr, uint1
 	res_inst->data_len = data_len;
 	res_inst->max_data_len = buffer_len;
 	res_inst->data_flags = data_flags;
+#if defined(CONFIG_LWM2M_ENGINE_AUTO_SEND)
+	res_inst->dirty = true;
+#endif
 
 	k_mutex_unlock(&registry_lock);
 	return ret;
 }
+
+#if defined(CONFIG_LWM2M_ENGINE_AUTO_SEND)
+int lwm2m_set_res_force_send(const struct lwm2m_obj_path *path, bool force)
+{
+	int ret;
+	struct lwm2m_engine_res_inst *res_inst = NULL;
+
+	if (path->level < LWM2M_PATH_LEVEL_RESOURCE) {
+		LOG_ERR("path must have at least 3 parts");
+		return -EINVAL;
+	}
+
+	k_mutex_lock(&registry_lock, K_FOREVER);
+	/* look up resource obj */
+	ret = path_to_objs(path, NULL, NULL, NULL, &res_inst);
+	if (ret < 0) {
+		k_mutex_unlock(&registry_lock);
+		return ret;
+	}
+
+	if (!res_inst) {
+		LOG_ERR("res instance %d not found", path->res_inst_id);
+		k_mutex_unlock(&registry_lock);
+		return -ENOENT;
+	}
+
+	res_inst->force = force;
+
+	k_mutex_unlock(&registry_lock);
+	return ret;
+}
+
+int lwm2m_set_res_report_after_write(const struct lwm2m_obj_path *path, bool report_after_write)
+{
+	int ret;
+	struct lwm2m_engine_res_inst *res_inst = NULL;
+
+	if (path->level < LWM2M_PATH_LEVEL_RESOURCE) {
+		LOG_ERR("path must have at least 3 parts");
+		return -EINVAL;
+	}
+
+	k_mutex_lock(&registry_lock, K_FOREVER);
+	/* look up resource obj */
+	ret = path_to_objs(path, NULL, NULL, NULL, &res_inst);
+	if (ret < 0) {
+		k_mutex_unlock(&registry_lock);
+		return ret;
+	}
+
+	if (!res_inst) {
+		LOG_ERR("res instance %d not found", path->res_inst_id);
+		k_mutex_unlock(&registry_lock);
+		return -ENOENT;
+	}
+
+	res_inst->report_after_write = report_after_write;
+
+	k_mutex_unlock(&registry_lock);
+	return ret;
+}
+#endif
 
 static bool lwm2m_validate_time_resource_lenghts(uint16_t resource_length, uint16_t buf_length)
 {
@@ -714,6 +779,11 @@ static int lwm2m_engine_set(const struct lwm2m_obj_path *path, const void *value
 		ret = res->post_write_cb(obj_inst->obj_inst_id, res->res_id, res_inst->res_inst_id,
 					 data_ptr, len, false, 0, 0);
 	}
+
+#if defined(CONFIG_LWM2M_ENGINE_AUTO_SEND)
+	changed |= res_inst->force;
+	res_inst->dirty |= changed;
+#endif
 
 	if (changed && LWM2M_HAS_PERM(obj_field, LWM2M_PERM_R)) {
 		lwm2m_notify_observer_path(path);

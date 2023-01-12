@@ -493,6 +493,47 @@ config LWM2M_DEVICE_ERROR_CODE_SETTINGS
 	  Store the device error code list in settings. Ensures error list can
 	  be transferred to LwM2M server even if the device is reset.
 
+config LWM2M_ENGINE_AUTO_SEND
+	bool "Automatically send modifications via LwM2M 1.1 send"
+	depends on LWM2M_VERSION_1_1
+	help
+	  This setting starts tracking resource changes and sends them via LwM2M 1.1 send.
+
+if LWM2M_ENGINE_AUTO_SEND
+config LWM2M_ENGINE_AUTO_SEND_MODIFIED_RESOURCES_MAX
+	int "Maximum # of modified resources"
+	default 20
+	help
+	 Max number of resources be can be processed for auto send.
+	 This setting should be bigger or equal to LWM2M_COMPOSITE_PATH_LIST_SIZE.
+
+config LWM2M_ENGINE_AUTO_SEND_STATIC_PATH_HINTS_MAX
+	int "Maximum # of static path hints"
+	default 10
+	help
+	  Max number of path hints that can be configured for auto send.
+
+config LWM2M_ENGINE_AUTO_SEND_CHECK_FREQUENCY_MAX
+	int "Minimum milliseconds between auto send resource modification checks"
+	default 0
+	help
+	  This setting can reduce checks frequency in case of many object / resources
+
+config LWM2M_ENGINE_AUTO_SEND_RESPONSE_TIMEOUT
+	int "Timeout in milliseconds to wait for a send response."
+	default 100000
+	help
+	  This value should be bigger than the time to receive the
+	  LWM2M_SEND_STATUS_TIMEOUT state in a send callback.
+
+config LWM2M_ENGINE_AUTO_SEND_FORCE_SEND
+	bool "Send resources on every update"
+	help
+	  If enabled, a resource gets sent on every update to it, even if its value has not changed.
+	  The behavior can be changed for each resource individually with lwm2m_set_res_force_send()
+
+endif # LWM2M_ENGINE_AUTO_SEND
+
 config LWM2M_DEVICE_PWRSRC_MAX
 	int "Maximum # of device power source records"
 	default 5

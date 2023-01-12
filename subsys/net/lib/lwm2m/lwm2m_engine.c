@@ -61,6 +61,9 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #ifdef CONFIG_LWM2M_RW_SENML_CBOR_SUPPORT
 #include "lwm2m_rw_senml_cbor.h"
 #endif
+#ifdef CONFIG_LWM2M_ENGINE_AUTO_SEND
+#include "lwm2m_auto_send.h"
+#endif
 
 #if defined(CONFIG_NET_TC_THREAD_COOPERATIVE)
 /* Lowest priority cooperative thread */
@@ -825,6 +828,7 @@ static void socket_loop(void *p1, void *p2, void *p3)
 			if (sock_ctx[i] == NULL) {
 				continue;
 			}
+
 			if (!sys_slist_is_empty(&sock_ctx[i]->pending_sends)) {
 				continue;
 			}
@@ -834,6 +838,9 @@ static void socket_loop(void *p1, void *p2, void *p3)
 			}
 			if (lwm2m_rd_client_is_registred(sock_ctx[i])) {
 				next_tx = check_notifications(sock_ctx[i], now);
+#ifdef CONFIG_LWM2M_ENGINE_AUTO_SEND
+				lwm2m_enginge_auto_send_run(sock_ctx[i], now);
+#endif
 				if (next_tx < next) {
 					next = next_tx;
 				}
