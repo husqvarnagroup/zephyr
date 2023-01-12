@@ -582,6 +582,15 @@ config LWM2M_ENGINE_SEND_TIMEOUT_DO_NOTHING
 
 endchoice
 
+config LWM2M_ENGINE_REGISTRATION_SEND_INSTANCES_DISABLED
+	bool "Disable sending object instances on registration"
+	help
+	  Under certain conditions it is not required to send (a big number) of instances during
+	  registration and by disabling it one can drastically reduce the size of registration
+	  payload. Lwm2m 1.1 discover can be used to find out all instances / objects when needed
+	  after registration.
+	  NOTE: this might be in violation of the lwm2m spec.
+
 config LWM2M_DEVICE_PWRSRC_MAX
 	int "Maximum # of device power source records"
 	default 5
