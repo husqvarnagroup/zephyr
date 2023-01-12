@@ -56,6 +56,9 @@ zephyr_library_sources_ifdef(CONFIG_LWM2M_ACCESS_CONTROL_ENABLE
 zephyr_library_sources_ifdef(CONFIG_LWM2M_UCIFI_LPWAN
     ucifi_lpwan.c
     )
+zephyr_library_sources_ifdef(CONFIG_LWM2M_ENGINE_AUTO_SEND
+    lwm2m_auto_send.c
+    )
 
 # TLV Support
 zephyr_library_sources_ifdef(CONFIG_LWM2M_RW_OMA_TLV_SUPPORT
