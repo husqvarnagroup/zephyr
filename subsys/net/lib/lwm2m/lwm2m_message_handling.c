@@ -971,6 +971,20 @@ int lwm2m_register_payload_handler(struct lwm2m_message *msg)
 			continue;
 		}
 
+#if defined(CONFIG_LWM2M_ENGINE_REGISTRATION_SEND_INSTANCES_DISABLED)
+		// HACK: only send objects and not instances
+		struct lwm2m_obj_path path = {
+			.obj_id = obj->obj_id,
+			.level = LWM2M_PATH_LEVEL_OBJECT,
+		};
+
+		ret = engine_put_corelink(&msg->out, &path);
+		if (ret < 0) {
+			return ret;
+		}
+		continue;
+#endif
+
 		/* Only report <OBJ_ID> when no instance available or it's
 		 * needed to report object version.
 		 */
