@@ -2912,8 +2912,10 @@ static int do_send_reply_cb(const struct coap_packet *response, struct coap_repl
 
 static void do_send_timeout_cb(struct lwm2m_message *msg)
 {
+#if !defined(CONFIG_LWM2M_ENGINE_SEND_TIMEOUT_DEREGISTER_DISABLED)
 	LOG_WRN("Send Timeout");
 	lwm2m_rd_client_timeout(msg->ctx);
+#endif
 }
 #endif
 
