@@ -930,6 +930,9 @@ int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst, struct lwm2m_eng
 
 	res_inst->data_len = len;
 
+#if defined(CONFIG_LWM2M_RESOURCE_DATA_MODIFICATION_TRACKING)
+	res_inst->last_modified = k_uptime_get();
+#endif
 	if (LWM2M_HAS_PERM(obj_field, LWM2M_PERM_R)) {
 		lwm2m_notify_observer_path(&msg->path);
 	}

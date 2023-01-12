@@ -535,6 +535,11 @@ endchoice
 
 endif # LWM2M_RESOURCE_DATA_CACHE_SUPPORT
 
+config LWM2M_RESOURCE_DATA_MODIFICATION_TRACKING
+	bool "Resource modification tracking"
+	help
+	  This setting enabled tracking of resource changes.
+
 config LWM2M_DEVICE_PWRSRC_MAX
 	int "Maximum # of device power source records"
 	default 5

@@ -385,6 +385,9 @@ struct lwm2m_engine_res_inst {
 	uint16_t data_len;
 	uint16_t res_inst_id; /* 65535 == not "created" */
 	uint8_t  data_flags;
+#if defined(CONFIG_LWM2M_RESOURCE_DATA_MODIFICATION_TRACKING)
+	int64_t last_modified;
+#endif
 };
 
 struct lwm2m_engine_res {
@@ -423,6 +426,9 @@ static inline void init_res_instance(struct lwm2m_engine_res_inst *ri,
 	memset(ri, 0, sizeof(*ri) * ri_len);
 	for (i = 0; i < ri_len; i++) {
 		ri[i].res_inst_id = RES_INSTANCE_NOT_CREATED;
+#if defined(CONFIG_LWM2M_RESOURCE_DATA_MODIFICATION_TRACKING)
+		ri[i].last_modified = k_uptime_get();
+#endif
 	}
 }
 
