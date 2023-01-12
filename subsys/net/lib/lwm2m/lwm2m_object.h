@@ -388,6 +388,9 @@ struct lwm2m_engine_res_inst {
 #if defined(CONFIG_LWM2M_RESOURCE_DATA_MODIFICATION_TRACKING)
 	int64_t last_modified;
 #endif
+#if defined(CONFIG_LWM2M_ENGINE_AUTO_SEND)
+	int64_t last_sent;
+#endif
 };
 
 struct lwm2m_engine_res {

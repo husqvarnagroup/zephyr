@@ -540,6 +540,48 @@ config LWM2M_RESOURCE_DATA_MODIFICATION_TRACKING
 	help
 	  This setting enabled tracking of resource changes.
 
+config LWM2M_ENGINE_AUTO_SEND
+	bool "Automatically send modifications via lwm2m 1.1 send"
+	depends on LWM2M_VERSION_1_1
+	depends on LWM2M_RESOURCE_DATA_MODIFICATION_TRACKING
+	help
+	  This setting starts tracking resource changes and sends them via lwm2m 1.1 send.
+
+if LWM2M_ENGINE_AUTO_SEND
+config LWM2M_ENGINE_AUTO_SEND_MODIFIED_RESOURCES_MAX
+	int "Maximum # of modified resources"
+        default 20
+	help
+	   Max number of resources be can be processed for auto send.
+	   This setting should be bigger or equal to LWM2M_COMPOSITE_PATH_LIST_SIZE.
+
+config LWM2M_ENGINE_AUTO_SEND_STATIC_PATH_HINTS_MAX
+	int "Maximum # of static path hints"
+        default 10
+	help
+	  Max number of path hints that can be configured for auto send.
+
+config LWM2M_ENGINE_AUTO_SEND_NEXT_PATH_HINTS_MAX
+	int "Maximum # of next send hints"
+        default 10
+	help
+	  Max number of send hints that can be configured for the next send.
+	  After each send, the next hints are cleared.
+
+config LWM2M_ENGINE_AUTO_SEND_IGNORED_PATHS_MAX
+	int "Maximum # of ignored paths"
+        default 10
+	help
+	  Max number of ignored paths that can be configured for auto send.
+
+config LWM2M_ENGINE_AUTO_SEND_CHECK_FREQUENCY_MAX
+	int "Minimum milliseconds between auto send resource modification checks."
+	default 0
+	help
+	  This setting can reduce checks frequency in case of many object / resources
+
+endif # LWM2M_ENGINE_AUTO_SEND
+
 config LWM2M_DEVICE_PWRSRC_MAX
 	int "Maximum # of device power source records"
 	default 5
