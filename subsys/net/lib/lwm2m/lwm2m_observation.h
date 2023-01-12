@@ -61,7 +61,7 @@ struct lwm2m_obj_path_list {
 /* Initialize path list */
 void lwm2m_engine_path_list_init(sys_slist_t *lwm2m_path_list, sys_slist_t *lwm2m_free_list,
 				 struct lwm2m_obj_path_list path_object_buf[],
-				 uint8_t path_object_size);
+				 uint16_t path_object_size);
 /**
  * Add new path to the list while maintaining hierarchical sort order
  *
