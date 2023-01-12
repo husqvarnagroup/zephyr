@@ -468,6 +468,9 @@ int lwm2m_set_res_buf(const struct lwm2m_obj_path *path, void *buffer_ptr, uint1
 	res_inst->data_len = data_len;
 	res_inst->max_data_len = buffer_len;
 	res_inst->data_flags = data_flags;
+#if defined(CONFIG_LWM2M_RESOURCE_DATA_MODIFICATION_TRACKING)
+	res_inst->last_modified = k_uptime_get();
+#endif
 
 	k_mutex_unlock(&registry_lock);
 	return ret;
@@ -726,6 +729,10 @@ static int lwm2m_engine_set(const struct lwm2m_obj_path *path, const void *value
 		ret = res->post_write_cb(obj_inst->obj_inst_id, res->res_id, res_inst->res_inst_id,
 					 data_ptr, len, false, 0);
 	}
+
+#if defined(CONFIG_LWM2M_RESOURCE_DATA_MODIFICATION_TRACKING)
+	res_inst->last_modified = k_uptime_get();
+#endif
 
 	if (changed && LWM2M_HAS_PERM(obj_field, LWM2M_PERM_R)) {
 		lwm2m_notify_observer_path(path);
