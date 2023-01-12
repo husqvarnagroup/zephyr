@@ -391,6 +391,13 @@ struct lwm2m_engine_res_inst {
 	uint16_t data_len;
 	uint16_t res_inst_id; /* 65535 == not "created" */
 	uint8_t  data_flags;
+#if defined(CONFIG_LWM2M_ENGINE_AUTO_SEND)
+	uint8_t dirty: 1;
+	uint8_t force: 1;
+	uint8_t sending: 1;
+	uint8_t ignore: 1;
+	uint8_t report_after_write: 1;
+#endif
 };
 
 struct lwm2m_engine_res {
@@ -429,6 +436,13 @@ static inline void init_res_instance(struct lwm2m_engine_res_inst *ri,
 	memset(ri, 0, sizeof(*ri) * ri_len);
 	for (i = 0; i < ri_len; i++) {
 		ri[i].res_inst_id = RES_INSTANCE_NOT_CREATED;
+#if defined(CONFIG_LWM2M_ENGINE_AUTO_SEND)
+		ri[i].dirty = false;
+		ri[i].force = IS_ENABLED(CONFIG_LWM2M_ENGINE_AUTO_SEND_FORCE_SEND);
+		ri[i].sending = false;
+		ri[i].ignore = false;
+		ri[i].report_after_write = true;
+#endif
 	}
 }
 
