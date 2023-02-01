@@ -35,6 +35,10 @@ LOG_MODULE_REGISTER(net_ipv6, CONFIG_NET_IPV6_LOG_LEVEL);
 #include "route.h"
 #include "net_stats.h"
 
+#ifdef CONFIG_SG_PPP_BRIDGE
+#include <net/sg_ppp_bridge.h>
+#endif
+
 BUILD_ASSERT(sizeof(struct in6_addr) == NET_IPV6_ADDR_SIZE);
 
 /* Timeout value to be used when allocating net buffer during various
@@ -552,6 +556,18 @@ enum net_verdict net_ipv6_input(struct net_pkt *pkt, bool is_loopback)
 	net_pkt_set_ip_hdr_len(pkt, sizeof(struct net_ipv6_hdr));
 	net_pkt_set_ipv6_hop_limit(pkt, NET_IPV6_HDR(pkt)->hop_limit);
 	net_pkt_set_family(pkt, PF_INET6);
+
+
+#ifdef CONFIG_SG_PPP_BRIDGE
+	switch (sg_ppp_bridge_process_pkt(pkt, hdr)) {
+		case NET_OK:
+			return NET_OK;
+		case NET_CONTINUE:
+			break;
+		case NET_DROP:
+			goto drop;
+	}
+#endif
 
 	if (!net_pkt_filter_ip_recv_ok(pkt)) {
 		/* drop the packet */
