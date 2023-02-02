@@ -53,7 +53,7 @@ struct cbor_nb_reader {
 
 struct cbor_nb_writer {
 	struct net_buf *nb;
-	zcbor_state_t zs[2];
+	zcbor_state_t zs[COND_CODE_1(CONFIG_ZCBOR_CANONICAL, (3), (2))];
 
 #ifdef CONFIG_MCUMGR_SMP_SUPPORT_ORIGINAL_PROTOCOL
 	uint16_t error_group;
