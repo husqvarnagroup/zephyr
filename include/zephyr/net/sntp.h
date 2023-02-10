@@ -44,6 +44,7 @@ struct sntp_ctx {
 		struct zsock_pollfd fds[1];
 		int nfds;
 		int fd;
+		struct sockaddr server_addr;
 	} sock;
 /** @endcond */
 
