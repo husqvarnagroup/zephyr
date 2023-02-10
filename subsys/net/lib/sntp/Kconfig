@@ -25,4 +25,10 @@ module-str = Log level for SNTP
 module-help = Enable debug message of SNTP client library.
 source "subsys/net/Kconfig.template.log_config.net"
 
+config SNTP_BIND_PORT
+	int "SNTP client bind port"
+	default 123
+	help
+	  This is the default port the client binds to.
+
 endif # SNTP
