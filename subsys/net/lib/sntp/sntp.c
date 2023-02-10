@@ -193,13 +193,29 @@ int sntp_init(struct sntp_ctx *ctx, struct sockaddr *addr, socklen_t addr_len)
 
 	memset(ctx, 0, sizeof(struct sntp_ctx));
 
+	struct sockaddr bind_addr;
+	socklen_t bind_addr_len;
+
+	if (addr->sa_family == AF_INET6) {
+		struct sockaddr_in6 *bind_addr6 = (struct sockaddr_in6 *)&bind_addr;
+		bind_addr_len = sizeof(struct sockaddr_in6);
+		bind_addr6->sin6_family = AF_INET6;
+		bind_addr6->sin6_port = htons(CONFIG_SNTP_BIND_PORT);
+		bind_addr6->sin6_addr = in6addr_any;
+	} else {
+		LOG_ERR("Protocol not supported");
+		return -1;
+	}
+
+	memcpy(&ctx->sock.server_addr, addr, addr_len);
+
 	ctx->sock.fd = zsock_socket(addr->sa_family, SOCK_DGRAM, IPPROTO_UDP);
 	if (ctx->sock.fd < 0) {
 		NET_ERR("Failed to create UDP socket %d", errno);
 		return -errno;
 	}
 
-	ret = zsock_connect(ctx->sock.fd, addr, addr_len);
+	ret = zsock_bind(ctx->sock.fd, &bind_addr, bind_addr_len);
 	if (ret < 0) {
 		(void)zsock_close(ctx->sock.fd);
 		NET_ERR("Cannot connect to UDP remote : %d", errno);
@@ -233,7 +249,8 @@ int sntp_query(struct sntp_ctx *ctx, uint32_t timeout, struct sntp_time *time)
 	tx_pkt.tx_tm_s = htonl(ctx->expected_orig_ts.seconds);
 	tx_pkt.tx_tm_f = htonl(ctx->expected_orig_ts.fraction);
 
-	ret = zsock_send(ctx->sock.fd, (uint8_t *)&tx_pkt, sizeof(tx_pkt), 0);
+	ret = zsock_sendto(ctx->sock.fd, (uint8_t *)&tx_pkt, sizeof(tx_pkt), 0, &ctx->sock.server_addr,
+		     NET_SOCKADDR_MAX_SIZE);
 	if (ret < 0) {
 		NET_ERR("Failed to send over UDP socket %d", ret);
 		return ret;
