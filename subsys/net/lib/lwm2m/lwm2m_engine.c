@@ -108,11 +108,20 @@ static int sock_nfds;
 
 static struct lwm2m_block_context block1_contexts[NUM_BLOCK1_CONTEXT];
 /* Resource wrappers */
+#if defined(CONFIG_LWM2M_COAP_BLOCK_TRANSFER)
+static struct coap_block_context output_block_contexts[NUM_OUTPUT_BLOCK_CONTEXT];
+#endif
+
+/* Resource wrappers */
 struct lwm2m_ctx **lwm2m_sock_ctx(void) { return sock_ctx; }
 
 int lwm2m_sock_nfds(void) { return sock_nfds; }
 
 struct lwm2m_block_context *lwm2m_block1_context(void) { return block1_contexts; }
+
+#if defined(CONFIG_LWM2M_COAP_BLOCK_TRANSFER)
+struct coap_block_context *lwm2m_output_block_context(void) { return output_block_contexts; }
+#endif
 
 static int lwm2m_socket_update(struct lwm2m_ctx *ctx);
 
@@ -1079,6 +1088,9 @@ static int lwm2m_engine_init(const struct device *dev)
 	}
 
 	(void)memset(block1_contexts, 0, sizeof(block1_contexts));
+#if defined(CONFIG_LWM2M_COAP_BLOCK_TRANSFER)
+	(void)memset(output_block_contexts, 0, sizeof(output_block_contexts));
+#endif
 
 	if (IS_ENABLED(CONFIG_LWM2M_RESOURCE_DATA_CACHE_SUPPORT)) {
 		/* Init data cache */
