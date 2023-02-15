@@ -1,0 +1,24 @@
+# Kconfig - SIM3U series configuration options
+
+#
+# Copyright (c) 2019 Christian Taedcke
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+if SOC_SERIES_SIM3U
+
+config SOC_SERIES
+	default "sim3u"
+
+config SOC_PART_NUMBER
+	default "SIM3U167-A-GM" if SOC_PART_NUMBER_SIM3U167_A_GM
+
+config NUM_IRQS
+	int
+	# must be >= the highest interrupt number used
+	default 53
+
+source "soc/arm/silabs_sim3/sim3u/Kconfig.defconfig.sim3u"
+
+endif # SOC_SERIES_SIM3U

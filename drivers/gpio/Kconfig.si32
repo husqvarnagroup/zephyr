@@ -1,0 +1,6 @@
+config GPIO_SI32
+	bool "GPIO Driver for SI32 family of MCUs"
+	default y
+	depends on DT_HAS_SILABS_SI32_GPIO_ENABLED
+	help
+	  Enable GPIO driver for SI32 line of MCUs

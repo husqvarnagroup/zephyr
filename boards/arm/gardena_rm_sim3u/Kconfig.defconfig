@@ -1,0 +1,6 @@
+if BOARD_GARDENA_RM_SIM3U
+
+config BOARD
+	default "gardena_rm_sim3u"
+
+endif # BOARD_GARDENA_RM_SIM3U

@@ -1,0 +1,15 @@
+description: SI32 USART
+
+compatible: "silabs,si32-usart"
+
+include: [uart-controller.yaml, pinctrl-device.yaml]
+
+properties:
+    reg:
+      required: true
+
+    interrupts:
+      required: true
+
+    clocks:
+      required: true

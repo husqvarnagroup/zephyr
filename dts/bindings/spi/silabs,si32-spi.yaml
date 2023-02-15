@@ -1,0 +1,15 @@
+description: SI32 SPI
+
+compatible: "silabs,si32-spi"
+
+include: [spi-controller.yaml, pinctrl-device.yaml]
+
+properties:
+    reg:
+      required: true
+
+    interrupts:
+      required: true
+
+    clocks:
+      required: true

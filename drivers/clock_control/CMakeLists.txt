@@ -20,6 +20,9 @@ zephyr_library_sources_ifdef(CONFIG_CLOCK_CONTROL_NPCX                clock_cont
 zephyr_library_sources_ifdef(CONFIG_CLOCK_CONTROL_NRF                 clock_control_nrf.c)
 zephyr_library_sources_ifdef(CONFIG_CLOCK_CONTROL_NRF_DRIVER_CALIBRATION nrf_clock_calibration.c)
 zephyr_library_sources_ifdef(CONFIG_CLOCK_CONTROL_RV32M1_PCC          clock_control_rv32m1_pcc.c)
+zephyr_library_sources_ifdef(CONFIG_CLOCK_CONTROL_SI32_PLL          clock_control_si32_pll.c)
+zephyr_library_sources_ifdef(CONFIG_CLOCK_CONTROL_SI32_AHB          clock_control_si32_ahb.c)
+zephyr_library_sources_ifdef(CONFIG_CLOCK_CONTROL_SI32_APB          clock_control_si32_apb.c)
 
 if(CONFIG_CLOCK_CONTROL_STM32_CUBE)
   zephyr_library_sources_ifdef(CONFIG_CLOCK_STM32_MUX clock_stm32_mux.c)

@@ -1,0 +1,5 @@
+compatible: "silabs,si32-flash-controller"
+
+description: Silabs SI32 flash controller
+
+include: flash-controller.yaml

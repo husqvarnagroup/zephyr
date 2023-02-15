@@ -1,0 +1,13 @@
+description: Silabs SI32 APB clock controller node
+
+compatible: "silabs,si32-apb"
+
+include: base.yaml
+
+properties:
+    clocks:
+      required: true
+
+    divider:
+      type: int
+      required: true

@@ -1,0 +1,27 @@
+description: |
+  Ailabs si32 pinctrl node.
+
+compatible: "silabs,si32-pinctrl"
+
+include:
+  - name: base.yaml
+  - name: pincfg-node-group.yaml
+    child-binding:
+      child-binding:
+        property-allowlist:
+          - input-enable
+          - output-enable
+          - output-low
+          - output-high
+
+child-binding:
+  description: si32 pin controller pin group
+  child-binding:
+    description: |
+      si32 pin controller pin configuration node
+    properties:
+      pinmux:
+        required: true
+        type: array
+        description: |
+          Pin mux selections for this group.

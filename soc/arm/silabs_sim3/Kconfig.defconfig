@@ -1,0 +1,1 @@
+source "soc/arm/silabs_sim3/*/Kconfig.defconfig.series"
