@@ -234,6 +234,11 @@ static int firmware_block_received_cb(uint16_t obj_inst_id,
 		data_len, last_block);
 	return 0;
 }
+
+static int firmware_cancel_cb(const uint16_t obj_inst_id) {
+	LOG_INF("FIRMWARE: Canceled");
+	return 0;
+}
 #endif
 
 /* An example data validation callback. */
@@ -379,6 +384,7 @@ static int lwm2m_setup(void)
 	/* setup data buffer for block-wise transfer */
 	lwm2m_engine_register_pre_write_callback("5/0/0", firmware_get_buf);
 	lwm2m_firmware_set_write_cb(firmware_block_received_cb);
+	lwm2m_firmware_set_cancel_cb(firmware_cancel_cb);
 #endif
 #if defined(CONFIG_LWM2M_FIRMWARE_UPDATE_PULL_SUPPORT)
 	lwm2m_engine_create_res_inst("5/0/8/0");
