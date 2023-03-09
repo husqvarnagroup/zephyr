@@ -2926,8 +2926,15 @@ static int do_send_reply_cb(const struct coap_packet *response, struct coap_repl
 
 static void do_send_timeout_cb(struct lwm2m_message *msg)
 {
-	LOG_WRN("Send Timeout");
+#if defined(CONFIG_LWM2M_ENGINE_SEND_TIMEOUT_FULL_REGISTRATION)
+	LOG_WRN("Send Timeout - Re-registering");
 	lwm2m_rd_client_timeout(msg->ctx);
+#elif defined(CONFIG_LWM2M_ENGINE_SEND_TIMEOUT_ATTEMPT_REGISTRATION_UPDATE)
+	LOG_WRN("Send Timeout - Attempting to update registration");
+	lwm2m_rd_client_update();
+#elif defined(CONFIG_LWM2M_ENGINE_SEND_TIMEOUT_DO_NOTHING)
+	LOG_WRN("Send Timeout - Doing nothing");
+#endif
 }
 #endif
 
