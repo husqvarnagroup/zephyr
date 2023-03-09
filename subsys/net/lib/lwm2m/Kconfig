@@ -582,13 +582,6 @@ config LWM2M_ENGINE_AUTO_SEND_CHECK_FREQUENCY_MAX
 
 endif # LWM2M_ENGINE_AUTO_SEND
 
-config LWM2M_ENGINE_SEND_TIMEOUT_DEREGISTER_DISABLED
-	bool "Disable re-registration on send timeout"
-	depends on LWM2M_VERSION_1_1
-	help
-	  If lwm2m send timeout is considered temporary and re-registration is expensive, disable
-	  the re-registration on timeout to let the engine remain connected
-
 config LWM2M_ENGINE_REGISTRATION_SEND_INSTANCES_DISABLED
 	bool "Disable sending object instances on registration"
 	help
