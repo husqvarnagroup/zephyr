@@ -3603,8 +3603,15 @@ static void do_send_timeout_cb(struct lwm2m_message *msg)
 	if (msg->send_status_cb) {
 		msg->send_status_cb(LWM2M_SEND_STATUS_TIMEOUT);
 	}
-	LOG_WRN("Send Timeout");
+#if defined(CONFIG_LWM2M_ENGINE_SEND_TIMEOUT_FULL_REGISTRATION)
+	LOG_WRN("Send timeout - Re-registering");
 	lwm2m_rd_client_timeout(msg->ctx);
+#elif defined(CONFIG_LWM2M_ENGINE_SEND_TIMEOUT_ATTEMPT_REGISTRATION_UPDATE)
+	LOG_WRN("Send timeout - Attempting to update registration");
+	lwm2m_rd_client_update();
+#elif defined(CONFIG_LWM2M_ENGINE_SEND_TIMEOUT_DO_NOTHING)
+	LOG_WRN("Send timeout - Doing nothing");
+#endif
 }
 #endif
 

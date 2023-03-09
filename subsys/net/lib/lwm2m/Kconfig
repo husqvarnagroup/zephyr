@@ -534,6 +534,25 @@ config LWM2M_ENGINE_AUTO_SEND_FORCE_SEND
 
 endif # LWM2M_ENGINE_AUTO_SEND
 
+choice LWM2M_ENGINE_SEND_TIMEOUT
+	prompt "LwM2M send timeout action"
+	default LWM2M_ENGINE_SEND_TIMEOUT_FULL_REGISTRATION
+	help
+	  If LwM2M send timeout is considered temporary and full re-registration is too expensive,
+	  chose LWM2M_ENGINE_SEND_TIMEOUT_DO_NOTHING to ignore the timeout or chose less expensive
+	  LWM2M_ENGINE_SEND_TIMEOUT_ATTEMPT_REGISTRATION_UPDATE as middle ground.
+
+config LWM2M_ENGINE_SEND_TIMEOUT_FULL_REGISTRATION
+	bool "Reset registration state and perform full new registration"
+
+config LWM2M_ENGINE_SEND_TIMEOUT_ATTEMPT_REGISTRATION_UPDATE
+	bool "Keep registration state and attempt registration update"
+
+config LWM2M_ENGINE_SEND_TIMEOUT_DO_NOTHING
+	bool "Keep registration state and do nothing"
+
+endchoice
+
 config LWM2M_DEVICE_PWRSRC_MAX
 	int "Maximum # of device power source records"
 	default 5
