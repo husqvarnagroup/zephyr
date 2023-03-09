@@ -1455,6 +1455,11 @@ int lwm2m_engine_resume(void);
 void lwm2m_rd_client_update(void);
 
 /**
+ * @brief Trigger a Registration of the LwM2M RD Client
+ */
+void lwm2m_rd_client_register(void);
+
+/**
  * @brief LwM2M path maximum length
  */
 #define LWM2M_MAX_PATH_STR_SIZE sizeof("/65535/65535/65535/65535")

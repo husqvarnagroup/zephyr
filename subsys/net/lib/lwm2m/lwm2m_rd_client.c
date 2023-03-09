@@ -347,6 +347,14 @@ void engine_trigger_update(bool update_objects)
 	k_mutex_unlock(&client.mutex);
 }
 
+/* force registration with remote peer */
+void engine_trigger_registration()
+{
+	k_mutex_lock(&client.mutex, K_FOREVER);
+	client.engine_state = ENGINE_DO_REGISTRATION;
+	k_mutex_unlock(&client.mutex);
+}
+
 static inline const char *code2str(uint8_t code)
 {
 	switch (code) {
@@ -1472,6 +1480,11 @@ void lwm2m_rd_client_update(void)
 	engine_trigger_update(false);
 }
 
+void lwm2m_rd_client_register(void)
+{
+	engine_trigger_registration();
+}
+
 struct lwm2m_ctx *lwm2m_rd_client_ctx(void)
 {
 	return client.ctx;
@@ -1514,10 +1527,9 @@ int lwm2m_rd_client_timeout(struct lwm2m_ctx *client_ctx)
 	if (!sm_is_registered()) {
 		return 0;
 	}
-	k_mutex_lock(&client.mutex, K_FOREVER);
+
 	LOG_WRN("Confirmable Timeout -> Re-connect and register");
-	client.engine_state = ENGINE_DO_REGISTRATION;
-	k_mutex_unlock(&client.mutex);
+	engine_trigger_registration();
 	return 0;
 }
 
