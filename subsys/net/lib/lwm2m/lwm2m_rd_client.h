@@ -42,6 +42,7 @@
 
 int lwm2m_rd_client_init(void);
 void engine_trigger_update(bool update_objects);
+void engine_trigger_registration();
 int engine_trigger_bootstrap(void);
 int lwm2m_rd_client_pause(void);
 int lwm2m_rd_client_resume(void);
