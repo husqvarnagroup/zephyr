@@ -3408,6 +3408,11 @@ static int do_send_reply_cb(const struct coap_packet *response, struct coap_repl
 		return 0;
 	}
 
+	if (code == COAP_RESPONSE_CODE_NOT_FOUND) {
+		lwm2m_rd_client_register();
+		return 0;
+	}
+
 	LOG_ERR("Failed with code %u.%u. Not Retrying.", COAP_RESPONSE_CODE_CLASS(code),
 		COAP_RESPONSE_CODE_DETAIL(code));
 

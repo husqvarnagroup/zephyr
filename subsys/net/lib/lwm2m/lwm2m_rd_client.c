@@ -1721,6 +1721,14 @@ void lwm2m_rd_client_update(void)
 	engine_trigger_update(false);
 }
 
+void lwm2m_rd_client_register(void)
+{
+	k_mutex_lock(&client.mutex, K_FOREVER);
+	set_sm_state(ENGINE_DO_REGISTRATION);
+	next_event_at(0);
+	k_mutex_unlock(&client.mutex);
+}
+
 struct lwm2m_ctx *lwm2m_rd_client_ctx(void)
 {
 	return client.ctx;
@@ -1773,11 +1781,11 @@ int lwm2m_rd_client_timeout(struct lwm2m_ctx *client_ctx)
 	if (!sm_is_registered()) {
 		return 0;
 	}
-	k_mutex_lock(&client.mutex, K_FOREVER);
+
 	LOG_WRN("Confirmable Timeout -> Re-connect and register");
-	set_sm_state(ENGINE_DO_REGISTRATION);
-	next_event_at(0);
-	k_mutex_unlock(&client.mutex);
+
+	lwm2m_rd_client_register();
+
 	return 0;
 }
 
