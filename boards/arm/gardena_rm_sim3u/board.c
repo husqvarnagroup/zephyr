@@ -60,7 +60,7 @@ static int board_init(const struct device *dev)
 	}
 
 	/* inactive: manual, active: auto */
-	gpio_pin_configure_dt(&diversity_mode_gpio, GPIO_OUTPUT_ACTIVE);
+	gpio_pin_configure_dt(&diversity_mode_gpio, GPIO_OUTPUT_INACTIVE);
 
 	/* In manual mode: diversity pin state */
 	gpio_pin_configure_dt(&diversity_state_gpio, GPIO_OUTPUT_INACTIVE);
