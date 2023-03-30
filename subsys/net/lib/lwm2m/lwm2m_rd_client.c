@@ -355,6 +355,18 @@ void engine_trigger_registration()
 	k_mutex_unlock(&client.mutex);
 }
 
+void lwm2m_rd_client_register_load_server_ep_cb(struct lwm2m_ctx *client_ctx,
+						lwm2m_ctx_server_ep_cb_t cb)
+{
+	client_ctx->load_server_ep_cb = cb;
+}
+
+void lwm2m_rd_client_register_store_server_ep_cb(struct lwm2m_ctx *client_ctx,
+						 lwm2m_ctx_server_ep_cb_t cb)
+{
+	client_ctx->store_server_ep_cb = cb;
+}
+
 static inline const char *code2str(uint8_t code)
 {
 	switch (code) {
@@ -494,6 +506,12 @@ static int do_registration_reply_cb(const struct coap_packet *response,
 		memcpy(client.server_ep, options[1].value,
 		       options[1].len);
 		client.server_ep[options[1].len] = '\0';
+
+		/* call a hook to store the server_ep provided by the application */
+		if (client.ctx->store_server_ep_cb != NULL) {
+			client.ctx->store_server_ep_cb(client.server_ep, options[1].len);
+		}
+
 		set_sm_state(ENGINE_REGISTRATION_DONE);
 		LOG_INF("Registration Done (EP='%s')",
 			client.server_ep);
@@ -1013,6 +1031,7 @@ static int sm_send_registration_msg(void)
 static int sm_do_registration(void)
 {
 	int ret = 0;
+	int endpoint_len;
 
 	if (client.ctx->connection_suspended) {
 		if (lwm2m_engine_connection_resume(client.ctx)) {
@@ -1063,6 +1082,20 @@ static int sm_do_registration(void)
 		}
 	}
 
+	/* call a hook to load the server_ep provided by the application */
+	if (client.ctx->load_server_ep_cb != NULL) {
+		endpoint_len = client.ctx->load_server_ep_cb(client.server_ep, CLIENT_EP_LEN);
+		client.server_ep[endpoint_len] = '\0';
+		if (endpoint_len > 0) {
+			/* remember the last reg time */
+			client.last_update = k_uptime_get();
+
+			/* finalize registration */
+			set_sm_state(ENGINE_REGISTRATION_DONE);
+			LOG_INF("Load registration Done (EP='%s')", client.server_ep);
+			return ret;
+		}
+	}
 	ret = sm_send_registration_msg();
 
 	return ret;

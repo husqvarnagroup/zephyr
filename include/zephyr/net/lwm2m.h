@@ -121,6 +121,15 @@ typedef void (*lwm2m_ctx_event_cb_t)(struct lwm2m_ctx *ctx,
 
 
 /**
+ * @brief LwM2M client hook to load and store the server endpoint name (also known as location)
+ * 	  during registration
+ *
+ * @param[in] server_ep LwM2M server endpoint (location)
+ * @param[in] server_ep_len LwM2M server endpoint (location) length
+ */
+typedef int (*lwm2m_ctx_server_ep_cb_t)(char* server_ep, size_t server_ep_len);
+
+/**
  * @brief LwM2M context structure to maintain information for a single
  * LwM2M connection.
  */
@@ -207,6 +216,14 @@ struct lwm2m_ctx {
 	lwm2m_observe_cb_t observe_cb;
 
 	lwm2m_ctx_event_cb_t event_cb;
+
+	/** Hook to provide the server endpoint name before registration in order to skip
+	 *  the registration request.
+	 */
+	lwm2m_ctx_server_ep_cb_t load_server_ep_cb;
+
+	/** Hook to store the server endpoint name after registration. */
+	lwm2m_ctx_server_ep_cb_t store_server_ep_cb;
 
 	/** Validation buffer. Used as a temporary buffer to decode the resource
 	 *  value before validation. On successful validation, its content is
@@ -1425,6 +1442,30 @@ int lwm2m_rd_client_start(struct lwm2m_ctx *client_ctx, const char *ep_name,
  */
 int lwm2m_rd_client_stop(struct lwm2m_ctx *client_ctx,
 			  lwm2m_ctx_event_cb_t event_cb, bool deregister);
+
+/**
+ * @brief Register load server endpoint name callback
+ *
+ * Register a callback to provide the server endpoint name (also known as location) before
+ * registration in order to skip the registration request.
+ *
+ * @param[in] client_ctx LwM2M context
+ * @param[in] cb Callback function to load the client id (location)
+ */
+void lwm2m_rd_client_register_load_server_ep_cb(struct lwm2m_ctx *client_ctx,
+						lwm2m_ctx_server_ep_cb_t cb);
+
+/**
+ * @brief Register store server endpoint name callback
+ *
+ * Register a callback to store the server endpoint name (also known as location) before
+ * registration in order to skip the registration request.
+ *
+ * @param[in] client_ctx LwM2M context
+ * @param[in] cb Callback function to store the server endpoint name (location)
+ */
+void lwm2m_rd_client_register_store_server_ep_cb(struct lwm2m_ctx *client_ctx,
+						 lwm2m_ctx_server_ep_cb_t cb);
 
 /**
  * @brief Suspend the LwM2M engine Thread
