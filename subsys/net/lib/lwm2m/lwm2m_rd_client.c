@@ -1085,8 +1085,8 @@ static int sm_do_registration(void)
 	/* call a hook to load the server_ep provided by the application */
 	if (client.ctx->load_server_ep_cb != NULL) {
 		endpoint_len = client.ctx->load_server_ep_cb(client.server_ep, CLIENT_EP_LEN);
-		client.server_ep[endpoint_len] = '\0';
 		if (endpoint_len > 0) {
+			client.server_ep[endpoint_len] = '\0';
 			/* remember the last reg time */
 			client.last_update = k_uptime_get();
 
