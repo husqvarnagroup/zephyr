@@ -6,9 +6,9 @@ config SOC_GECKO
 	select HAS_SEGGER_RTT if ZEPHYR_SEGGER_MODULE
 	select BUILD_OUTPUT_HEX
 
-if SOC_GECKO
-
 rsource "*/*/Kconfig"
+
+if SOC_GECKO
 
 config SOC_GECKO_SDID
 	int
