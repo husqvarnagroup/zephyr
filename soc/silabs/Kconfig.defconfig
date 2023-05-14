@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2017 Christian Taedcke
 
-if SOC_GECKO
-
 rsource "*/*/Kconfig.defconfig"
+
+if SOC_GECKO
 
 config SOC_GECKO_EMU
 	default y

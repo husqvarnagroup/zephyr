@@ -5,4 +5,6 @@ if(CONFIG_SOC_FAMILY_SILABS_S0 OR CONFIG_SOC_FAMILY_SILABS_S1 OR CONFIG_SOC_FAMI
   add_subdirectory(common_gecko)
 endif()
 
+add_subdirectory_ifdef(CONFIG_SOC_FAMILY_SILABS_SIM3 silabs_sim3)
+
 zephyr_include_directories(${SOC_FAMILY}/${SOC_SERIES})
