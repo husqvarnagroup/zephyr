@@ -85,6 +85,10 @@
 
 /** @} */
 
+#if (CONFIG_LWM2M_NUM_OUTPUT_RAW_BLOCK_CONTEXT > 0)
+#define LWM2M_SUPPORT_RAW_BLOCK_TRANSFER 1
+#endif
+
 /**
  * @brief Callback function called when a socket error is encountered
  *
@@ -409,6 +413,34 @@ typedef int (*lwm2m_engine_user_cb_t)(uint16_t obj_inst_id);
  */
 typedef int (*lwm2m_engine_execute_cb_t)(uint16_t obj_inst_id,
 					 uint8_t *args, uint16_t args_len);
+
+/**
+ * @brief Callback for providing raw payload blocks
+ *
+ * This is used to provide raw data block transfer.
+ * A function of this type is registered when calling
+ * lwm2m_engine_send_raw_block_wise().
+ *
+ *
+ * @param[in] block_size_bytes Block size used for current block.
+ * @param[in] block_number The number of the current block
+ *         (starting at 0).
+ * @param[out] raw_block_data_len Length of raw data provided.
+ *         This will be equal to `block_size_bytes` for all but
+ *         the last block.
+ * @param[out] raw_total_size Total size of payload that is then
+ *         split into blocks. The payload size needs to be known
+ *         from the first block on and it is supposed to not
+ *         change when the callback is called multiple times.
+ *
+ * @return Callback returns a pointer to the provided block data
+ *         or NULL in case of error. Memory management needs to be
+ *         done by the implementer of the callback.
+ */
+typedef void * (*lwm2m_engine_send_raw_cb_t)(const uint16_t block_size_bytes,
+					     const uint16_t block_number,
+					     uint16_t *raw_block_data_len,
+					     size_t *raw_total_size);
 
 /**
  * @name Power source types used for the "Available Power Sources" resource of
@@ -1604,6 +1636,24 @@ enum lwm2m_send_status {
  * @brief Callback returning send status
  */
 typedef void (*lwm2m_send_cb_t)(enum lwm2m_send_status status);
+
+#if defined(LWM2M_SUPPORT_RAW_BLOCK_TRANSFER)
+/**
+ * @brief LwM2M SEND operation with raw data
+ *
+ * The data is sent with CoAP block-wise transfer.
+ *
+ * @param ctx LwM2M context
+ * @param path_list LwM2M Path string
+ * @param confirmation_request True request confirmation for operation.
+ * @param callback Callback that provides the chunks for a block to send.
+ *
+ * @return 0 for success or negative in case of error.
+ *
+ */
+int lwm2m_send_cb_raw_block_wise(struct lwm2m_ctx *ctx, const struct lwm2m_obj_path *path,
+				 lwm2m_send_cb_t reply_cb, lwm2m_engine_send_raw_cb_t callback);
+#endif
 
 /** 
  * @brief LwM2M SEND operation to given path list asynchronously with confirmation callback

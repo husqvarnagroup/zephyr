@@ -436,6 +436,13 @@ int coap_header_set_code(const struct coap_packet *cpkt, uint8_t code);
 uint16_t coap_header_get_id(const struct coap_packet *cpkt);
 
 /**
+ * @brief Change message id for already existing CoAP packet.
+ * @param cpkt CoAP packet representation
+ * @param id New message id
+ */
+void coap_header_change_id(struct coap_packet *cpkt, const uint16_t id);
+
+/**
  * @brief Returns the data pointer and length of the CoAP packet.
  *
  * @param cpkt CoAP packet representation

@@ -1050,6 +1050,11 @@ uint16_t coap_header_get_id(const struct coap_packet *cpkt)
 	return (cpkt->data[2] << 8) | cpkt->data[3];
 }
 
+void coap_header_change_id(struct coap_packet *cpkt, const uint16_t id) {
+	cpkt->data[2] = id >> 8;
+	cpkt->data[3] = (uint8_t)id;
+}
+
 const uint8_t *coap_packet_get_payload(const struct coap_packet *cpkt, uint16_t *len)
 {
 	int payload_len;

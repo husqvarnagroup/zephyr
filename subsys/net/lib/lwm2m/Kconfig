@@ -86,6 +86,70 @@ config LWM2M_COAP_BLOCK_TRANSFER
 	  To append CoAP ETag option into outgoing block transfers, CONFIG_SYS_HASH_FUNC32 should
 	  be enabled.
 
+if LWM2M_COAP_BLOCK_TRANSFER
+config LWM2M_COAP_ENCODE_BUFFER_SIZE
+	int "LwM2M CoAP buffer size for encoding the full message for block-wise transfer"
+	default 1024
+	help
+	  Size of buffers for serializing big LwM2M CoAP messages that need to be
+	  split into blocks for sending.
+
+config LWM2M_NUM_OUTPUT_BLOCK_CONTEXT
+	int "Maximum # of LWM2M block contexts used for outgoing messages"
+	default 3
+	help
+	  Maximum number of CoAP block contexts needed to split messages into blocks for
+	  sending. This limits the numer of messages that need block transfer that can be
+	  handled at the same time.
+
+config LWM2M_NUM_OUTPUT_RAW_BLOCK_CONTEXT
+	int "Maximum # of LWM2M block contexts used for outgoing raw messages"
+	default 0
+	help
+	  Maximum number of CoAP block contexts needed to send messages into blocks provided by
+	  a callback. This limits the numer of messages that need raw block transfer that can be
+	  handled at the same time.
+
+config LWM2M_LOG_ENCODE_BUFFER_ALLOCATIONS
+	bool "Log allocations of encode buffers for block wise transfer"
+	select MEM_SLAB_TRACE_MAX_UTILIZATION
+	help
+	  The allocation of encode buffers can be tracked to analyse the usage and
+	  to optimize the configuration of number of block contexts and indirectly
+	  the number of available encode buffers.
+endif # LWM2M_COAP_BLOCK_TRANSFER
+
+config LWM2M_ENGINE_VALIDATION_BUFFER_SIZE
+	int "Size of the validation buffer for the incoming data"
+	default 64
+	help
+	  LwM2M will use the validation buffer during the write operation, to
+	  decode the resource value before validating it (applies for resources
+	  for which validation callback has been registered). Set this value to
+	  the maximum expected size of the resources that need to be validated
+	  (and thus have validation callback registered).
+	  Setting the validation buffer size to 0 disables validation support.
+
+config LWM2M_ENGINE_MAX_PENDING
+	int "LWM2M engine max. pending objects"
+	default 5
+	help
+	  Set the maximum pending objects for the LWM2M library client
+
+config LWM2M_ENGINE_MAX_REPLIES
+	int "LWM2M engine max. reply objects"
+	default 5
+	help
+	  Set the maximum reply objects for the LWM2M library client
+
+config LWM2M_ENGINE_MAX_OBSERVER
+	int "Maximum # of observable LWM2M resources"
+	default 10
+	range 5 200
+	help
+	  This value sets the maximum number of resources which can be
+	  added to the observe notification list.
+
 config LWM2M_CANCEL_OBSERVE_BY_PATH
 	bool "Use path matching as fallback for cancel-observe"
 	help

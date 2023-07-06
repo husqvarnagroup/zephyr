@@ -120,6 +120,8 @@ void lwm2m_clear_block_contexts(void)
 	(void)memset(block1_contexts, 0, sizeof(block1_contexts));
 }
 
+const struct lwm2m_writer nop_writer = {};
+
 static int init_block_ctx(const struct lwm2m_obj_path *path, struct lwm2m_block_context **ctx)
 {
 	int i;
@@ -200,6 +202,15 @@ static void free_block_ctx(struct lwm2m_block_context *ctx)
 	memset(&ctx->path, 0, sizeof(struct lwm2m_obj_path));
 }
 
+static inline bool is_raw_block_callback_in_use(const struct lwm2m_message *msg)
+{
+#if defined(LWM2M_SUPPORT_RAW_BLOCK_TRANSFER)
+	return msg->raw_callback != NULL;
+#else
+	return false;
+#endif
+}
+
 #if defined(CONFIG_LWM2M_COAP_BLOCK_TRANSFER)
 STATIC int request_output_block_ctx(struct coap_block_context **ctx)
 {
@@ -233,7 +244,6 @@ STATIC void release_output_block_ctx(struct coap_block_context **ctx)
 	}
 }
 
-
 static inline void log_buffer_usage(void)
 {
 #if defined(CONFIG_LWM2M_LOG_ENCODE_BUFFER_ALLOCATIONS)
@@ -261,8 +271,8 @@ static inline void release_body_encode_buffer(uint8_t **buffer)
 	}
 }
 
-STATIC int build_msg_block_for_send(struct lwm2m_message *msg, uint16_t block_num,
-				    enum coap_block_size block_size)
+STATIC int build_msg_block_for_send_default(struct lwm2m_message *msg, uint16_t block_num,
+                                            enum coap_block_size block_size)
 {
 	int ret;
 	uint16_t payload_size;
@@ -273,8 +283,8 @@ STATIC int build_msg_block_for_send(struct lwm2m_message *msg, uint16_t block_nu
 	uint8_t token[COAP_TOKEN_MAX_LEN];
 	uint8_t tkl;
 
-	NET_ASSERT(msg->msg_data == msg->cpkt.data,
-		   "big data buffer should not be in use for writing message");
+	NET_ASSERT(!is_raw_block_callback_in_use(msg),
+		   "not expecting to have a raw callback registered");
 
 	if (block_num * block_size_bytes >= complete_payload_len) {
 		return -EINVAL;
@@ -370,39 +380,129 @@ STATIC int build_msg_block_for_send(struct lwm2m_message *msg, uint16_t block_nu
 	return 0;
 }
 
+#if defined(LWM2M_SUPPORT_RAW_BLOCK_TRANSFER)
+STATIC int build_msg_block_for_send_raw(struct lwm2m_message *msg, uint16_t block_num,
+		                                enum coap_block_size block_size)
+{
+	int ret;
+	uint16_t payload_size;
+	const uint16_t block_size_bytes = coap_block_size_to_bytes(lwm2m_default_block_size());
+	size_t complete_payload_len = 0;
+	void *raw_block_data;
+
+	uint8_t token[COAP_TOKEN_MAX_LEN];
+	uint8_t tkl;
+
+	NET_ASSERT(is_raw_block_callback_in_use(msg),
+		   "expecting to have a raw callback registered");
+
+	raw_block_data = msg->raw_callback(block_size_bytes,
+					   block_num,
+					   &payload_size,
+					   &complete_payload_len);
+	if (raw_block_data == NULL) {
+		LOG_ERR("Error in send_raw callback!");
+		return -ENOENT;
+	}
+	/* reset payload including marker */
+	msg->cpkt.offset = msg->cpkt.hdr_len + msg->cpkt.opt_len;
+
+	if (block_num * block_size_bytes >= complete_payload_len) {
+		return -EINVAL;
+	}
+
+	if (block_num > 0) {
+		/* reuse message for next block */
+		tkl = coap_header_get_token(&msg->cpkt, token);
+		lwm2m_reset_message(msg, false);
+		msg->mid = coap_next_id();
+		msg->token = token;
+		msg->tkl = tkl;
+		ret = lwm2m_init_message(msg);
+		if (ret < 0) {
+			lwm2m_reset_message(msg, true);
+			LOG_ERR("Unable to init lwm2m message for next block!");
+			return ret;
+		}
+	}
+
+	/* Reuse the options. Just remove the block option from previous block. */
+	ret = coap_remove_descriptive_block_option(&msg->cpkt);
+	if (ret < 0) {
+		return ret;
+	}
+
+	if (block_num == 0) {
+		ret = request_output_block_ctx(&msg->out.block_ctx);
+		if (ret < 0) {
+			LOG_ERR("coap packet init error: no output block context available");
+			return ret;
+		}
+
+		ret = coap_block_transfer_init(msg->out.block_ctx, lwm2m_default_block_size(),
+						       complete_payload_len);
+		if (ret < 0) {
+			return ret;
+		}
+	} else {
+		/*  update block context */
+		msg->out.block_ctx->current = block_num * block_size_bytes;
+	}
+
+	ret = coap_append_descriptive_block_option(&msg->cpkt, msg->out.block_ctx);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = coap_packet_append_payload_marker(&msg->cpkt);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = buf_append(CPKT_BUF_WRITE(&msg->cpkt),
+			 raw_block_data, payload_size);
+	if (ret < 0) {
+		LOG_ERR("Unable to copy data for next block!");
+		return ret;
+	}
+
+	return 0;
+}
+#endif
+
+STATIC int build_msg_block_for_send(struct lwm2m_message *msg, uint16_t block_num,
+		                            enum coap_block_size block_size)
+{
+	NET_ASSERT(msg->msg_data == msg->cpkt.data,
+		   "big data buffer should not be in use for writing message");
+
+#if defined(LWM2M_SUPPORT_RAW_BLOCK_TRANSFER)
+	if (is_raw_block_callback_in_use(msg)) {
+		return build_msg_block_for_send_raw(msg, block_num, block_size);
+	} else {
+		return build_msg_block_for_send_default(msg, block_num, block_size);
+	}
+#else
+	return build_msg_block_for_send_default(msg, block_num, block_size);
+#endif
+}
+
 STATIC int prepare_msg_for_send(struct lwm2m_message *msg)
 {
 	int ret;
 	uint16_t len;
 	const uint8_t *payload;
 
-	/* save the big buffer for later use (splitting blocks) */
-	msg->body_encode_buffer = msg->cpkt;
+	if (!is_raw_block_callback_in_use(msg)) {
+		/* save the big buffer for later use (splitting blocks) */
+		msg->body_encode_buffer = msg->cpkt;
 
-	/* set the default (small) buffer for sending blocks */
-	msg->cpkt.data = msg->msg_data;
-	msg->cpkt.offset = 0;
-	msg->cpkt.max_len = MAX_PACKET_SIZE;
+		/* set the default (small) buffer for sending blocks */
+		msg->cpkt.data = msg->msg_data;
+		msg->cpkt.offset = 0;
+		msg->cpkt.max_len = MAX_PACKET_SIZE;
 
-	payload = coap_packet_get_payload(&msg->body_encode_buffer, &len);
-	if (len <= CONFIG_LWM2M_COAP_MAX_MSG_SIZE) {
-
-		/* copy the packet */
-		ret = buf_append(CPKT_BUF_WRITE(&msg->cpkt), msg->body_encode_buffer.data,
-				 msg->body_encode_buffer.offset);
-		if (ret != 0) {
-			return ret;
-		}
-
-		msg->cpkt.hdr_len = msg->body_encode_buffer.hdr_len;
-		msg->cpkt.opt_len = msg->body_encode_buffer.opt_len;
-
-		/* clear big buffer */
-		release_body_encode_buffer(&msg->body_encode_buffer.data);
-		msg->body_encode_buffer.data = NULL;
-
-		NET_ASSERT(msg->out.block_ctx == NULL, "Expecting to have no context to release");
-	} else {
+		payload = coap_packet_get_payload(&msg->body_encode_buffer, &len);
 		/* Before splitting the content, append Etag option to protect the integrity of
 		 * the payload.
 		 */
@@ -413,6 +513,34 @@ STATIC int prepare_msg_for_send(struct lwm2m_message *msg)
 						  (const uint8_t *)&hash, sizeof(hash));
 		}
 
+		/* Do block transfer if payload bigger than block size or if we set the raw callback
+		 */
+		if (len <= CONFIG_LWM2M_COAP_MAX_MSG_SIZE) {
+
+			/* copy the packet */
+			ret = buf_append(CPKT_BUF_WRITE(&msg->cpkt), msg->body_encode_buffer.data,
+					 msg->body_encode_buffer.offset);
+			if (ret != 0) {
+				return ret;
+			}
+
+			msg->cpkt.hdr_len = msg->body_encode_buffer.hdr_len;
+			msg->cpkt.opt_len = msg->body_encode_buffer.opt_len;
+
+			/* clear big buffer */
+			release_body_encode_buffer(&msg->body_encode_buffer.data);
+			msg->body_encode_buffer.data = NULL;
+
+			NET_ASSERT(msg->out.block_ctx == NULL,
+				   "Expecting to have no context to release");
+		} else {
+			ret = build_msg_block_for_send(msg, 0, lwm2m_default_block_size());
+			if (ret != 0) {
+				return ret;
+			}
+		}
+	} else {
+		/* raw_callback is set */
 		ret = build_msg_block_for_send(msg, 0, lwm2m_default_block_size());
 		if (ret != 0) {
 			return ret;
@@ -569,7 +697,12 @@ void lwm2m_reset_message(struct lwm2m_message *msg, bool release)
 		(void)memset(msg, 0, sizeof(*msg));
 	} else {
 		msg->message_timeout_cb = NULL;
-		(void)memset(&msg->cpkt, 0, sizeof(msg->cpkt));
+		/* Clear message data only if not using raw send.
+		 * Otherwise, header and options are reused for following blocks.
+		 */
+		if (!is_raw_block_callback_in_use(msg)) {
+			(void)memset(&msg->cpkt, 0, sizeof(msg->cpkt));
+		}
 #if defined(CONFIG_LWM2M_RESOURCE_DATA_CACHE_SUPPORT)
 		msg->cache_info = NULL;
 #endif
@@ -602,7 +735,7 @@ int lwm2m_init_message(struct lwm2m_message *msg)
 	msg->cache_info = NULL;
 #endif
 #if defined(CONFIG_LWM2M_COAP_BLOCK_TRANSFER)
-	if (msg->body_encode_buffer.data == NULL) {
+	if (msg->body_encode_buffer.data == NULL && !is_raw_block_callback_in_use(msg)) {
 		/* Get new big buffer for serializing the message */
 		r = request_body_encode_buffer(&body_data);
 		if (r < 0) {
@@ -613,7 +746,9 @@ int lwm2m_init_message(struct lwm2m_message *msg)
 		msg->body_encode_buffer.data = body_data;
 		body_data_max_len = CONFIG_LWM2M_COAP_ENCODE_BUFFER_SIZE;
 	} else {
-		/* We have already a big buffer. The message is reused for each block. */
+		/* Either we have a raw callback, and we are using only the small buffer.
+		 * Or we have already a big buffer. And the message is reused for each block.
+		 */
 		body_data = msg->msg_data;
 		body_data_max_len = sizeof(msg->msg_data);
 	}
@@ -621,11 +756,18 @@ int lwm2m_init_message(struct lwm2m_message *msg)
 	body_data = msg->msg_data;
 	body_data_max_len = sizeof(msg->msg_data);
 #endif
-	r = coap_packet_init(&msg->cpkt, body_data, body_data_max_len, COAP_VERSION_1, msg->type,
-			     tokenlen, token, msg->code, msg->mid);
-	if (r < 0) {
-		LOG_ERR("coap packet init error (err:%d)", r);
-		goto cleanup;
+	if (!is_raw_block_callback_in_use(msg) ||
+	    (is_raw_block_callback_in_use(msg) && msg->cpkt.offset == 0)) {
+		/* Initialize buffer for first block if raw block transfer is in use. */
+		r = coap_packet_init(&msg->cpkt, body_data, body_data_max_len, COAP_VERSION_1,
+				     msg->type, tokenlen, token, msg->code, msg->mid);
+		if (r < 0) {
+			LOG_ERR("coap packet init error (err:%d)", r);
+			goto cleanup;
+		}
+	} else {
+		/* Change message id in CoAP header for subsequent blocks. */
+		coap_header_change_id(&msg->cpkt, msg->mid);
 	}
 
 	/* only TYPE_CON messages need pending tracking / reply handling */
@@ -671,14 +813,24 @@ cleanup:
 	return r;
 }
 
+static inline bool is_raw_block_prepared(struct lwm2m_message *msg)
+{
+	if (is_raw_block_callback_in_use(msg)) {
+		return coap_has_descriptive_block_option(&msg->cpkt);
+	}
+	/* No raw callback: nothing to be prepared. Return true.  */
+	return true;
+}
+
 int lwm2m_send_message_async(struct lwm2m_message *msg)
 {
 #if defined(CONFIG_LWM2M_COAP_BLOCK_TRANSFER)
 
-	/* check if body encode buffer is in use => packet is not yet prepared for send */
-	if (msg->body_encode_buffer.data == msg->cpkt.data) {
+	/* Check if body encode buffer is in use => packet is not yet prepared for send.
+	 * Or check CoAP block options in case of raw send.
+	 */
+	if (msg->body_encode_buffer.data == msg->cpkt.data || !is_raw_block_prepared(msg)) {
 		int ret = prepare_msg_for_send(msg);
-
 		if (ret) {
 			lwm2m_reset_message(msg, true);
 			return ret;
@@ -3408,6 +3560,11 @@ static int do_send_reply_cb(const struct coap_packet *response, struct coap_repl
 		return 0;
 	}
 
+	if (code == COAP_RESPONSE_CODE_CONTINUE) {
+		LOG_INF("Send continue!");
+		return 0;
+	}
+
 	if (code == COAP_RESPONSE_CODE_NOT_FOUND) {
 		lwm2m_rd_client_register();
 		return 0;
@@ -3467,8 +3624,9 @@ static bool init_next_pending_timeseries_data(struct lwm2m_cache_read_info *cach
 }
 #endif
 
-int lwm2m_send_cb(struct lwm2m_ctx *ctx, const struct lwm2m_obj_path path_list[],
-			 uint8_t path_list_size, lwm2m_send_cb_t reply_cb)
+static int lwm2m_send_cb_impl(struct lwm2m_ctx *ctx, const struct lwm2m_obj_path path_list[],
+			      uint8_t path_list_size, lwm2m_send_cb_t reply_cb,
+			      lwm2m_engine_send_raw_cb_t raw_callback)
 {
 #if defined(CONFIG_LWM2M_SERVER_OBJECT_VERSION_1_1)
 	struct lwm2m_message *msg;
@@ -3545,10 +3703,14 @@ msg_init:
 	msg->tkl = LWM2M_MSG_TOKEN_GENERATE_NEW;
 	msg->out.out_cpkt = &msg->cpkt;
 
+#if defined(LWM2M_SUPPORT_RAW_BLOCK_TRANSFER)
+	msg->raw_callback = raw_callback;
+#endif
 	ret = lwm2m_init_message(msg);
 	if (ret) {
 		goto cleanup;
 	}
+
 #if defined(CONFIG_LWM2M_RESOURCE_DATA_CACHE_SUPPORT)
 	msg->cache_info = &cache_temp_info;
 #endif
@@ -3559,9 +3721,14 @@ msg_init:
 		msg->send_status_cb = reply_cb;
 	}
 
-	ret = select_writer(&msg->out, content_format);
-	if (ret) {
-		goto cleanup;
+	/* overwrite content write with NOP to prevent encoding */
+	if (raw_callback) {
+		msg->out.writer = &nop_writer;
+	} else {
+		ret = select_writer(&msg->out, content_format);
+		if (ret) {
+			goto cleanup;
+		}
 	}
 
 	ret = coap_packet_append_option(&msg->cpkt, COAP_OPTION_URI_PATH, LWM2M_DP_CLIENT_URI,
@@ -3613,3 +3780,19 @@ cleanup:
 	return -ENOTSUP;
 #endif
 }
+
+int lwm2m_send_cb(struct lwm2m_ctx *ctx, const struct lwm2m_obj_path path_list[],
+		  uint8_t path_list_size, lwm2m_send_cb_t reply_cb)
+{
+	return lwm2m_send_cb_impl(ctx, path_list, path_list_size, reply_cb, NULL);
+}
+
+#if defined(LWM2M_SUPPORT_RAW_BLOCK_TRANSFER)
+int lwm2m_send_cb_raw_block_wise(struct lwm2m_ctx *ctx, const struct lwm2m_obj_path *path,
+				 lwm2m_send_cb_t reply_cb, lwm2m_engine_send_raw_cb_t callback)
+{
+	NET_ASSERT(callback != NULL, "A raw data callback is required");
+
+	return lwm2m_send_cb_impl(ctx, path, 1, NULL, callback);
+}
+#endif
