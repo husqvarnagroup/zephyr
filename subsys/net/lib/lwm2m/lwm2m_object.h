@@ -499,6 +499,10 @@ struct lwm2m_message {
 #if defined(CONFIG_LWM2M_COAP_BLOCK_TRANSFER)
 	/** Buffer data containing complete message */
 	struct coap_packet body_encode_buffer;
+
+#if defined(LWM2M_SUPPORT_RAW_BLOCK_TRANSFER)
+	lwm2m_engine_send_raw_cb_t raw_callback;
+#endif
 #endif
 
 	/** Message transmission handling for TYPE_CON */
