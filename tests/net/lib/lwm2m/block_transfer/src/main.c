@@ -23,7 +23,7 @@ BUILD_ASSERT(IS_ENABLED(CONFIG_LWM2M_COAP_BLOCK_TRANSFER),
 BUILD_ASSERT(CONFIG_LWM2M_COAP_ENCODE_BUFFER_SIZE == EXPECTED_LWM2M_COAP_FULL_BUFFER_SIZE,
 	     "The expected max message size is wrong.");
 
-#define EXPECTED_NUM_OUTPUT_BLOCK_CONTEXT 3
+#define EXPECTED_NUM_OUTPUT_BLOCK_CONTEXT (2 + 1) /* 2 default, 1 raw block transfer */
 BUILD_ASSERT(NUM_OUTPUT_BLOCK_CONTEXT == EXPECTED_NUM_OUTPUT_BLOCK_CONTEXT,
 	     "The expected number of output block contexts is wrong.");
 
@@ -425,6 +425,181 @@ ZTEST_F(net_block_transfer, test_block_context)
 	release_output_block_ctx(&ctx4);
 	zassert_is_null(ctx4);
 }
+
+#if defined(LWM2M_SUPPORT_RAW_BLOCK_TRANSFER)
+#define EXPECTED_BUFFER_LEN 64
+#define EXPECTED_TOTAL_SIZE 150
+static void *dummy_raw_callback(const uint16_t block_size_bytes,
+				 const uint16_t block_num,
+				 uint16_t *raw_block_data_len,
+				 size_t *raw_total_size)
+{
+	zassert_equal(block_size_bytes, EXPECTED_BUFFER_LEN, "Test expects block size of 64");
+
+	uint16_t bytes_left_to_send = EXPECTED_TOTAL_SIZE - (EXPECTED_BUFFER_LEN *
+				       (block_num));
+
+	uint8_t bytes_for_block = MIN(EXPECTED_BUFFER_LEN, bytes_left_to_send);
+
+	static uint8_t buffer[EXPECTED_BUFFER_LEN];
+
+	uint8_t prefix = 0x10 * block_num;
+
+	for (int i = 0; i < bytes_for_block; ++i) {
+		buffer[i] = i + prefix;
+	}
+
+	*raw_block_data_len = bytes_for_block;
+	*raw_total_size = EXPECTED_TOTAL_SIZE;
+
+	return buffer;
+}
+
+ZTEST_F(net_block_transfer, test_raw_send)
+{
+	int ret;
+	struct lwm2m_message *msg = &fixture->msg;
+	static uint8_t token[] = {'t', 'o', 'k', 'e', 'n' };
+	uint16_t payload_len;
+	const uint8_t *payload;
+
+	/* Arrange */
+	msg->token = token;
+	msg->tkl = ARRAY_SIZE(token);
+	msg->raw_callback = dummy_raw_callback;
+
+	msg->code = COAP_METHOD_POST;
+	ret = lwm2m_init_message(msg);
+	zassert_equal(0, ret, "Failed to initialize lwm2m message");
+	zassert_not_null(msg->raw_callback, "Failed to set raw data callback");
+	zassert_is_null(msg->body_encode_buffer.data, "No encode buffer expected");
+
+	/* arrange */
+	const uint8_t *host = "host";
+
+	ret = coap_packet_append_option(&msg->cpkt, COAP_OPTION_URI_HOST, host,
+					strlen(host));
+	zassert_equal(0, ret, "Not able to append option: Host URI");
+
+	ret = coap_append_option_int(&msg->cpkt, COAP_OPTION_CONTENT_FORMAT,
+				     COAP_CONTENT_FORMAT_APP_CBOR);
+	zassert_equal(0, ret, "Not able to append option: Content Format");
+
+	zassert_equal(msg->cpkt.hdr_len, 9, "Header length not as expected");
+	zassert_equal(msg->cpkt.opt_len, 7, "Options length not as expected");
+
+	ret = coap_get_option_int(&msg->cpkt, COAP_OPTION_BLOCK1);
+	zassert_equal(ret, -ENOENT, "No block1 option expected");
+	ret = coap_get_option_int(&msg->cpkt, COAP_OPTION_BLOCK2);
+	zassert_equal(ret, -ENOENT, "No block2 option expected");
+
+	/* block 0 */
+	ret = prepare_msg_for_send(msg);
+	zassert_equal(0, ret, "Failed to prepare message for send");
+
+	zassert_equal(msg->cpkt.hdr_len, 9, "Header length not as expected");
+	zassert_equal(msg->cpkt.opt_len, 10, "Options length not as expected");
+
+	bool has_more;
+	uint8_t block_number;
+
+	ret = coap_get_block1_option(&msg->cpkt, &has_more, &block_number);
+	zassert(ret > 0, "block1 option expected");
+	zassert_equal(ret, 64, "Wrong block size");
+	zassert_true(has_more, "More block expected");
+	zassert_equal(block_number, 0, "Wrong block number");
+
+	ret = coap_get_option_int(&msg->cpkt, COAP_OPTION_BLOCK2);
+	zassert_equal(ret, -ENOENT, "No block2 option expected");
+
+	payload = coap_packet_get_payload(&msg->cpkt, &payload_len);
+	zassert_not_null(payload, "Payload expected");
+	zassert_equal(payload_len, 64, "Expected to have full block");
+	zassert_equal(payload[0], 0x0, "Wrong first byte in payload");
+	zassert_equal(payload[63], 0x3f, "Wrong first byte in payload");
+
+	/* block 1 */
+	 ret = build_msg_block_for_send(msg, 1, COAP_BLOCK_64);
+
+	zassert_equal(0, ret, "Failed to prepare message for send");
+	zassert_equal(msg->cpkt.hdr_len, 9, "Header length not as expected");
+	zassert_equal(msg->cpkt.opt_len, 10, "Options length not as expected");
+
+	ret = coap_get_block1_option(&msg->cpkt, &has_more, &block_number);
+	zassert(ret > 0, "block1 option expected");
+	zassert_equal(ret, 64, "Wrong block size");
+	zassert_true(has_more, "More block expected");
+	zassert_equal(block_number, 1, "Wrong block number");
+
+	ret = coap_get_option_int(&msg->cpkt, COAP_OPTION_BLOCK2);
+	zassert_equal(ret, -ENOENT, "No block2 option expected");
+
+	payload = coap_packet_get_payload(&msg->cpkt, &payload_len);
+	zassert_not_null(payload, "Payload expected");
+	zassert_equal(payload_len, 64, "Expected to have full block");
+	zassert_equal(payload[0], 0x10, "Wrong first byte in payload");
+	zassert_equal(payload[63], 0x4f, "Wrong first byte in payload");
+
+
+	/* block 2 */
+	ret = build_msg_block_for_send(msg, 2, COAP_BLOCK_64);
+
+	zassert_equal(0, ret, "Failed to prepare message for send");
+	zassert_equal(msg->cpkt.hdr_len, 9, "Header length not as expected");
+	zassert_equal(msg->cpkt.opt_len, 10, "Options length not as expected");
+
+	ret = coap_get_block1_option(&msg->cpkt, &has_more, &block_number);
+	zassert(ret > 0, "block1 option expected");
+	zassert_equal(ret, 64, "Wrong block size");
+	zassert_false(has_more, "More block expected");
+	zassert_equal(block_number, 2, "Wrong block number");
+
+	ret = coap_get_option_int(&msg->cpkt, COAP_OPTION_BLOCK2);
+	zassert_equal(ret, -ENOENT, "No block2 option expected");
+
+	payload = coap_packet_get_payload(&msg->cpkt, &payload_len);
+	zassert_not_null(payload, "Payload expected");
+	zassert_equal(payload_len, 22, "Expected to have full block");
+	zassert_equal(payload[0], 0x20, "Wrong first byte in payload");
+	zassert_equal(payload[21], 0x35, "Wrong first byte in payload");
+}
+
+static void *dummy_raw_callback_cancelling(const uint16_t block_size_bytes,
+				const uint16_t block_num,
+				uint16_t *raw_block_data_len,
+				size_t *raw_total_size)
+{
+	return NULL;
+}
+
+ZTEST_F(net_block_transfer, test_raw_send_cancel_from_callback)
+{
+	int ret;
+	struct lwm2m_message *msg = &fixture->msg;
+	static uint8_t token[] = {'t', 'o', 'k', 'e', 'n'};
+
+	/* Arrange */
+	msg->token = token;
+	msg->tkl = ARRAY_SIZE(token);
+	msg->raw_callback = dummy_raw_callback_cancelling;
+
+	msg->code = COAP_METHOD_POST;
+	ret = lwm2m_init_message(msg);
+	zassert_equal(0, ret, "Failed to initialize lwm2m message");
+	zassert_not_null(msg->raw_callback, "Failed to set raw data callback");
+	zassert_is_null(msg->body_encode_buffer.data, "No encode buffer expected");
+
+	/* arrange */
+	const uint8_t *host = "host";
+
+	ret = coap_packet_append_option(&msg->cpkt, COAP_OPTION_URI_HOST, host, strlen(host));
+	zassert_equal(0, ret, "Not able to append option: Host URI");
+
+	/* block 0 */
+	ret = prepare_msg_for_send(msg);
+	zassert_equal(-ENOENT, ret, "Callback cancelled operation");
+}
+#endif
 
 ZTEST_SUITE(net_block_transfer, NULL, net_block_transfer_setup, net_block_transfer_before,
 	    net_block_transfer_after, NULL);
