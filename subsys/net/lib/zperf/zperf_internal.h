@@ -24,7 +24,7 @@
 #define DST_IP6ADDR CONFIG_NET_CONFIG_PEER_IPV6_ADDR
 #define MY_IP6ADDR_SET
 #else
-#define MY_IP6ADDR NULL
+#define MY_IP6ADDR ""
 #define DST_IP6ADDR NULL
 #endif
 
@@ -33,7 +33,7 @@
 #define DST_IP4ADDR CONFIG_NET_CONFIG_PEER_IPV4_ADDR
 #define MY_IP4ADDR_SET
 #else
-#define MY_IP4ADDR NULL
+#define MY_IP4ADDR ""
 #define DST_IP4ADDR NULL
 #endif
 
