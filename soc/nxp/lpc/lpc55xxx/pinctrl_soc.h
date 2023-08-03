@@ -9,6 +9,7 @@
 
 #include <zephyr/devicetree.h>
 #include <zephyr/types.h>
+#include <soc.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,9 +30,10 @@ typedef uint32_t pinctrl_soc_pin_t;
 #endif
 
 #define Z_PINCTRL_IOCON_PINCFG(node_id)						\
-	(IF_ENABLED(DT_PROP(node_id, bias_pull_down), (IOCON_PIO_MODE(0x1) |))	\
-	IF_ENABLED(DT_PROP(node_id, bias_pull_up), (IOCON_PIO_MODE(0x2) |))	\
-	IF_ENABLED(DT_PROP(node_id, drive_push_pull), (IOCON_PIO_MODE(0x3) |))	\
+	(IF_ENABLED(DT_PROP(node_id, bias_pull_down), (IOCON_PIO_MODE_PULLDOWN |))	\
+	IF_ENABLED(DT_PROP(node_id, bias_pull_up), (IOCON_PIO_MODE_PULLUP |))	\
+	IF_ENABLED(DT_PROP(node_id, drive_push_pull),				\
+		(IOCON_PIO_MODE_PULLDOWN | IOCON_PIO_MODE_PULLUP |))		\
 	IOCON_PIO_SLEW(DT_ENUM_IDX(node_id, slew_rate)) |			\
 	IOCON_PIO_INVERT(DT_PROP(node_id, nxp_invert)) |			\
 	IOCON_PIO_DIGIMODE(!DT_PROP(node_id, nxp_analog_mode)) |		\
