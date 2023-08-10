@@ -456,6 +456,7 @@ int lwm2m_engine_auto_send_enable(int64_t after, uint32_t cooldown)
 		return -EINVAL;
 	}
 
+	auto_send_disabled_after = -1;
 	auto_send_enabled_after = after;
 	auto_send_cooldown = cooldown;
 
