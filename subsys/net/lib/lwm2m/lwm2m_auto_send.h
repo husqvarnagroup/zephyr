@@ -27,6 +27,7 @@ int lwm2m_engine_auto_send_add_static_path_hint(const struct lwm2m_obj_path *pat
  * @param path_str
  * @return
  */
+__deprecated
 int lwm2m_engine_auto_send_add_static_path_hint_str(const char *path_str);
 
 /**

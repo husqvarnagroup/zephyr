@@ -61,9 +61,7 @@ static struct lwm2m_obj_path_list *entry, *tmp;
 static sys_slist_t next_lwm2m_send_path_list;
 static sys_slist_t next_lwm2m_send_path_free_list;
 
-static char next_lwm2m_send_path_strings_buffer[MAX_SEND_PATHS_OVERALL][LWM2M_MAX_PATH_STR_SIZE];
-static const char *next_lwm2m_send_paths[MAX_SEND_PATHS_OVERALL];
-
+static struct lwm2m_obj_path next_lwm2m_send_paths[MAX_SEND_PATHS_OVERALL];
 static struct lwm2m_obj_path modified_paths[MAX_MODIFIED_RESOURCE];
 static struct lwm2m_auto_send_object_inst_ref partial_update_list_buf[MAX_MODIFIED_RESOURCE];
 static sys_slist_t partial_update_list;
@@ -688,13 +686,9 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 		LOG_DBG("Final sending paths:");
 #endif
 		SYS_SLIST_FOR_EACH_CONTAINER_SAFE (&next_lwm2m_send_path_list, entry, tmp, node) {
-			lwm2m_path_to_string(next_lwm2m_send_path_strings_buffer[send_path_count],
-					     LWM2M_MAX_PATH_STR_SIZE, &entry->path,
-					     entry->path.level);
 
 			if (!is_ignored_path(&entry->path)) {
-				next_lwm2m_send_paths[send_path_count] =
-					next_lwm2m_send_path_strings_buffer[send_path_count];
+				memcpy(&next_lwm2m_send_paths[send_path_count], &entry->path, sizeof(entry->path));
 #ifdef LWM2M_AUTO_SEND_DEBUG
 				LOG_DBG("- %s",
 					next_lwm2m_send_path_strings_buffer[send_path_count]);
@@ -709,7 +703,7 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 		}
 
 		if (send_path_count > 0) {
-			rc = lwm2m_engine_send(ctx, next_lwm2m_send_paths, send_path_count, true);
+			rc = lwm2m_send_cb(ctx, next_lwm2m_send_paths, send_path_count, NULL);
 			if (rc < 0) {
 				LOG_ERR("Automatic lwm2m send failed");
 				goto cleanup;
