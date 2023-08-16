@@ -35,7 +35,7 @@ static int gpio_si32_configure(const struct device *dev, gpio_pin_t pin, gpio_fl
 	const struct gpio_si32_config *config = dev->config;
 	uint32_t key = irq_lock();
 
-	if (flags & GPIO_OUTPUT) {
+	if ((flags & GPIO_OUTPUT) && !(flags & GPIO_LINE_OPEN_DRAIN)) {
 		if (flags & GPIO_OUTPUT_INIT_HIGH) {
 			SI32_PBSTD_A_write_pins_high(config->base, BIT(pin));
 		} else if (flags & GPIO_OUTPUT_INIT_LOW) {
@@ -43,7 +43,7 @@ static int gpio_si32_configure(const struct device *dev, gpio_pin_t pin, gpio_fl
 		}
 
 		SI32_PBSTD_A_set_pins_push_pull_output(config->base, BIT(pin));
-	} else if (flags & GPIO_INPUT) {
+	} else if ((flags & GPIO_INPUT) || (flags & GPIO_LINE_OPEN_DRAIN)) {
 		SI32_PBSTD_A_set_pins_digital_input(config->base, BIT(pin));
 	} else {
 		SI32_PBSTD_A_set_pins_analog(config->base, BIT(pin));

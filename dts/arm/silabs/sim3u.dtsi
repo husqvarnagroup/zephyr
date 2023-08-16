@@ -7,6 +7,7 @@
 #include <arm/armv7-m.dtsi>
 #include <dt-bindings/gpio/gpio.h>
 #include <freq.h>
+#include <zephyr/dt-bindings/i2c/i2c.h>
 
 / {
 	chosen {
@@ -99,6 +100,17 @@
 			clocks = <&clk_apb>;
 			status = "disabled";
 		};
+
+		i2c0: i2c@40009000 {
+			compatible = "gpio-i2c";
+			clock-frequency = <I2C_BITRATE_FAST>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x40009000 0x1000>;
+			interrupts = <32 0>;
+			status = "disabled";
+		};
+
 
 		gpio0: gpio@4002a0a0 {
 			compatible = "silabs,si32-gpio";
