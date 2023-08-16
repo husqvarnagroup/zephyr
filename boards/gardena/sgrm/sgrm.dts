@@ -115,6 +115,22 @@
 	status = "okay";
 };
 
+&i2c0 {
+	status = "okay";
+	sda-gpios = <&gpio3 10 GPIO_OPEN_DRAIN>;
+	scl-gpios = <&gpio3 11 GPIO_OPEN_DRAIN>;
+
+	eeprom0: eeprom@50 {
+		compatible = "atmel,at24";
+		reg = <0x50>;
+		status = "okay";
+		size = <DT_SIZE_K(32)>;
+		pagesize = <32>;
+		address-width = <16>;
+		timeout = <5>;
+	};
+};
+
 &flash0 {
 	status = "okay";
 
