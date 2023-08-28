@@ -723,13 +723,16 @@ int lwm2m_init_message(struct lwm2m_message *msg)
 #endif
 	if (!is_raw_block_callback_in_use(msg) ||
 	    (is_raw_block_callback_in_use(msg) && msg->cpkt.offset == 0)) {
-		/* if raw callback and data in cpkt we reuse the packet data */
+		/* Initialize buffer for first block if raw block transfer is in use. */
 		r = coap_packet_init(&msg->cpkt, body_data, body_data_max_len, COAP_VERSION_1,
 				     msg->type, tokenlen, token, msg->code, msg->mid);
 		if (r < 0) {
 			LOG_ERR("coap packet init error (err:%d)", r);
 			goto cleanup;
 		}
+	} else {
+		/* Change message id in CoAP header for subsequent blocks. */
+		coap_header_change_id(&msg->cpkt, msg->mid);
 	}
 
 	/* only TYPE_CON messages need pending tracking / reply handling */
