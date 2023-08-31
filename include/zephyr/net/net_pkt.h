@@ -95,7 +95,8 @@ struct net_pkt {
 	/** Allow placing the packet into sys_slist_t */
 	sys_snode_t next;
 #endif
-#if defined(CONFIG_NET_ROUTING) || defined(CONFIG_NET_ETHERNET_BRIDGE)
+#if defined(CONFIG_NET_ROUTING) || defined(CONFIG_NET_ETHERNET_BRIDGE) ||                          \
+	defined(CONFIG_NET_L2_LEMONBEAT_PPP_SEND_ADDR_UNREACHABLE)
 	struct net_if *orig_iface; /* Original network interface */
 #endif
 
@@ -358,7 +359,8 @@ static inline void net_pkt_set_iface(struct net_pkt *pkt, struct net_if *iface)
 
 static inline struct net_if *net_pkt_orig_iface(struct net_pkt *pkt)
 {
-#if defined(CONFIG_NET_ROUTING) || defined(CONFIG_NET_ETHERNET_BRIDGE)
+#if defined(CONFIG_NET_ROUTING) || defined(CONFIG_NET_ETHERNET_BRIDGE) ||                          \
+	defined(CONFIG_NET_L2_LEMONBEAT_PPP_SEND_ADDR_UNREACHABLE)
 	return pkt->orig_iface;
 #else
 	return pkt->iface;
@@ -368,7 +370,8 @@ static inline struct net_if *net_pkt_orig_iface(struct net_pkt *pkt)
 static inline void net_pkt_set_orig_iface(struct net_pkt *pkt,
 					  struct net_if *iface)
 {
-#if defined(CONFIG_NET_ROUTING) || defined(CONFIG_NET_ETHERNET_BRIDGE)
+#if defined(CONFIG_NET_ROUTING) || defined(CONFIG_NET_ETHERNET_BRIDGE) ||                          \
+	defined(CONFIG_NET_L2_LEMONBEAT_PPP_SEND_ADDR_UNREACHABLE)
 	pkt->orig_iface = iface;
 #else
 	ARG_UNUSED(pkt);
