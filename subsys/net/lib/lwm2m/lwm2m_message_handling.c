@@ -78,6 +78,8 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 /* Resources */
 
+static lwm2m_engine_pre_request_cb_t lwm2m_pre_request_cb = NULL;
+
 /* Shared set of in-flight LwM2M messages */
 static struct lwm2m_message messages[CONFIG_LWM2M_ENGINE_MAX_MESSAGES];
 
@@ -1126,6 +1128,16 @@ static int lwm2m_write_handler_opaque(struct lwm2m_engine_obj_inst *obj_inst,
 
 	return opaque_ctx.len;
 }
+
+int lwm2m_register_pre_request_cb(lwm2m_engine_pre_request_cb_t pre_request_cb)
+{
+	if (lwm2m_pre_request_cb != NULL) {
+		return -EBUSY;
+	}
+	lwm2m_pre_request_cb = pre_request_cb;
+	return 0;
+}
+
 /* This function is exposed for the content format writers */
 int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst, struct lwm2m_engine_res *res,
 			struct lwm2m_engine_res_inst *res_inst,
@@ -1149,6 +1161,13 @@ int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst, struct lwm2m_eng
 
 	if (LWM2M_HAS_RES_FLAG(res_inst, LWM2M_RES_DATA_FLAG_RO)) {
 		return -EACCES;
+	}
+
+	if (lwm2m_pre_request_cb != NULL) {
+		ret = lwm2m_pre_request_cb(msg);
+		if (ret < 0) {
+			return ret;
+		}
 	}
 
 	/* setup initial data elements */
@@ -1561,6 +1580,13 @@ static int lwm2m_read_handler(struct lwm2m_engine_obj_inst *obj_inst, struct lwm
 	temp_path.obj_inst_id = obj_inst->obj_inst_id;
 	temp_path.res_id = obj_field->res_id;
 	temp_path.level = LWM2M_PATH_LEVEL_RESOURCE;
+
+	if (lwm2m_pre_request_cb != NULL) {
+		ret = lwm2m_pre_request_cb(msg);
+		if (ret < 0) {
+			return ret;
+		}
+	}
 
 	loop_max = res->res_inst_count;
 	if (res->multi_res_inst) {
@@ -2198,6 +2224,13 @@ static int lwm2m_exec_handler(struct lwm2m_message *msg)
 	ret = path_to_objs(&msg->path, &obj_inst, NULL, &res, NULL);
 	if (ret < 0) {
 		return ret;
+	}
+
+	if (lwm2m_pre_request_cb != NULL) {
+		ret = lwm2m_pre_request_cb(msg);
+		if (ret < 0) {
+			return ret;
+		}
 	}
 
 	args = (uint8_t *)coap_packet_get_payload(msg->in.in_cpkt, &args_len);
