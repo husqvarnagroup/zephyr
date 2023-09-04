@@ -1140,7 +1140,7 @@ int lwm2m_register_pre_request_cb(lwm2m_engine_pre_request_cb_t pre_request_cb)
 
 void lwm2m_unregister_pre_request_cb(void)
 {
-	lwm2m_pre_request_cb == NULL;
+	lwm2m_pre_request_cb = NULL;
 }
 
 /* This function is exposed for the content format writers */
