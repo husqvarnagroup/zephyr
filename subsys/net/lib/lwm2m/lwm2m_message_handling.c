@@ -1138,6 +1138,11 @@ int lwm2m_register_pre_request_cb(lwm2m_engine_pre_request_cb_t pre_request_cb)
 	return 0;
 }
 
+void lwm2m_unregister_pre_request_cb(void)
+{
+	lwm2m_pre_request_cb == NULL;
+}
+
 /* This function is exposed for the content format writers */
 int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst, struct lwm2m_engine_res *res,
 			struct lwm2m_engine_res_inst *res_inst,
@@ -1163,8 +1168,9 @@ int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst, struct lwm2m_eng
 		return -EACCES;
 	}
 
-	if (lwm2m_pre_request_cb != NULL) {
-		ret = lwm2m_pre_request_cb(msg);
+	volatile lwm2m_engine_pre_request_cb_t callback = lwm2m_pre_request_cb;
+	if (callback != NULL) {
+		ret = callback(msg);
 		if (ret < 0) {
 			return ret;
 		}
@@ -1581,8 +1587,9 @@ static int lwm2m_read_handler(struct lwm2m_engine_obj_inst *obj_inst, struct lwm
 	temp_path.res_id = obj_field->res_id;
 	temp_path.level = LWM2M_PATH_LEVEL_RESOURCE;
 
-	if (lwm2m_pre_request_cb != NULL) {
-		ret = lwm2m_pre_request_cb(msg);
+	volatile lwm2m_engine_pre_request_cb_t callback = lwm2m_pre_request_cb;
+	if (callback != NULL) {
+		ret = callback(msg);
 		if (ret < 0) {
 			return ret;
 		}
@@ -2226,8 +2233,9 @@ static int lwm2m_exec_handler(struct lwm2m_message *msg)
 		return ret;
 	}
 
-	if (lwm2m_pre_request_cb != NULL) {
-		ret = lwm2m_pre_request_cb(msg);
+	volatile lwm2m_engine_pre_request_cb_t callback = lwm2m_pre_request_cb;
+	if (callback != NULL) {
+		ret = callback(msg);
 		if (ret < 0) {
 			return ret;
 		}

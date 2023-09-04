@@ -79,6 +79,11 @@ int lwm2m_perform_read_op(struct lwm2m_message *msg, uint16_t content_format);
  */
 int lwm2m_register_pre_request_cb(lwm2m_engine_pre_request_cb_t pre_request_cb);
 
+/**
+ * @brief Unregisters the pre request callback
+ */
+void lwm2m_unregister_pre_request_cb(void);
+
 int lwm2m_perform_composite_read_op(struct lwm2m_message *msg, uint16_t content_format,
 				    sys_slist_t *lwm2m_path_list);
 
