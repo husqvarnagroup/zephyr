@@ -1168,14 +1168,6 @@ int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst, struct lwm2m_eng
 		return -EACCES;
 	}
 
-	volatile lwm2m_engine_pre_request_cb_t callback = lwm2m_pre_request_cb;
-	if (callback != NULL) {
-		ret = callback(msg);
-		if (ret < 0) {
-			return ret;
-		}
-	}
-
 	/* setup initial data elements */
 	data_ptr = res_inst->data_ptr;
 	data_len = res_inst->max_data_len;
@@ -1586,14 +1578,6 @@ static int lwm2m_read_handler(struct lwm2m_engine_obj_inst *obj_inst, struct lwm
 	temp_path.obj_inst_id = obj_inst->obj_inst_id;
 	temp_path.res_id = obj_field->res_id;
 	temp_path.level = LWM2M_PATH_LEVEL_RESOURCE;
-
-	volatile lwm2m_engine_pre_request_cb_t callback = lwm2m_pre_request_cb;
-	if (callback != NULL) {
-		ret = callback(msg);
-		if (ret < 0) {
-			return ret;
-		}
-	}
 
 	loop_max = res->res_inst_count;
 	if (res->multi_res_inst) {
@@ -2233,14 +2217,6 @@ static int lwm2m_exec_handler(struct lwm2m_message *msg)
 		return ret;
 	}
 
-	volatile lwm2m_engine_pre_request_cb_t callback = lwm2m_pre_request_cb;
-	if (callback != NULL) {
-		ret = callback(msg);
-		if (ret < 0) {
-			return ret;
-		}
-	}
-
 	args = (uint8_t *)coap_packet_get_payload(msg->in.in_cpkt, &args_len);
 
 	if (res->execute_cb) {
@@ -2870,6 +2846,15 @@ void lwm2m_udp_receive(struct lwm2m_ctx *client_ctx, uint8_t *buf, uint16_t buf_
 		msg->tkl = 0;
 
 		client_ctx->processed_req = msg;
+
+		volatile lwm2m_engine_pre_request_cb_t callback = lwm2m_pre_request_cb;
+		if (callback != NULL) {
+			r = callback(msg);
+			if (r < 0) {
+				LOG_ERR("lwm2m_pre_request_cb returns with %d", r);
+				return;
+			}
+		}
 
 		lwm2m_registry_lock();
 		/* process the response to this request */
