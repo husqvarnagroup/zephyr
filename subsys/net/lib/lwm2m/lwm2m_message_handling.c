@@ -77,6 +77,8 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 /* Resources */
 
+static lwm2m_engine_pre_request_cb_t lwm2m_pre_request_cb = NULL;
+
 /* Shared set of in-flight LwM2M messages */
 static struct lwm2m_message messages[CONFIG_LWM2M_ENGINE_MAX_MESSAGES];
 static struct lwm2m_block_context block1_contexts[NUM_BLOCK1_CONTEXT];
@@ -1138,6 +1140,21 @@ static int lwm2m_write_handler_opaque(struct lwm2m_engine_obj_inst *obj_inst,
 
 	return opaque_ctx.len;
 }
+
+int lwm2m_register_pre_request_cb(lwm2m_engine_pre_request_cb_t pre_request_cb)
+{
+	if (lwm2m_pre_request_cb != NULL) {
+		return -EBUSY;
+	}
+	lwm2m_pre_request_cb = pre_request_cb;
+	return 0;
+}
+
+void lwm2m_unregister_pre_request_cb(void)
+{
+	lwm2m_pre_request_cb = NULL;
+}
+
 /* This function is exposed for the content format writers */
 int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst, struct lwm2m_engine_res *res,
 			struct lwm2m_engine_res_inst *res_inst,
@@ -2837,6 +2854,15 @@ void lwm2m_udp_receive(struct lwm2m_ctx *client_ctx, uint8_t *buf, uint16_t buf_
 		msg->tkl = 0;
 
 		client_ctx->processed_req = msg;
+
+		volatile lwm2m_engine_pre_request_cb_t callback = lwm2m_pre_request_cb;
+		if (callback != NULL) {
+			r = callback(msg);
+			if (r < 0) {
+				LOG_ERR("lwm2m_pre_request_cb returns with %d", r);
+				return;
+			}
+		}
 
 		lwm2m_registry_lock();
 		/* process the response to this request */
