@@ -31,6 +31,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <zephyr/net/lwm2m_path.h>
 #include <zephyr/net/net_ip.h>
 #include <zephyr/net/socket.h>
+#include <zephyr/sys/atomic.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/types.h>
 #include <zephyr/sys/hash_function.h>
@@ -80,6 +81,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #endif
 
 /* Resources */
+static atomic_ptr_val_t lwm2m_pre_request_cb;
 
 /* Shared set of in-flight LwM2M messages */
 static struct lwm2m_message messages[CONFIG_LWM2M_ENGINE_MAX_MESSAGES];
@@ -1074,6 +1076,21 @@ static int lwm2m_write_handler_opaque(struct lwm2m_engine_obj_inst *obj_inst,
 
 	return (len < 0 ? len : written);
 }
+
+int lwm2m_register_pre_request_cb(lwm2m_engine_pre_request_cb_t cb)
+{
+	if (cb == NULL) {
+		atomic_ptr_clear(&lwm2m_pre_request_cb);
+		return 0;
+	}
+
+	if (atomic_ptr_cas(&lwm2m_pre_request_cb, NULL, (void *)cb)) {
+		return 0;
+	}
+
+	return -EBUSY;
+}
+
 /* This function is exposed for the content format writers */
 int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst, struct lwm2m_engine_res *res,
 			struct lwm2m_engine_res_inst *res_inst,
@@ -2776,6 +2793,7 @@ void lwm2m_udp_receive(struct lwm2m_ctx *client_ctx, uint8_t *buf, uint16_t buf_
 	uint32_t last_block_num;
 #endif
 	bool has_block2;
+	lwm2m_engine_pre_request_cb_t cb;
 
 	r = coap_packet_parse(&response, buf, buf_len, NULL, 0);
 	if (r < 0) {
@@ -2934,6 +2952,20 @@ void lwm2m_udp_receive(struct lwm2m_ctx *client_ctx, uint8_t *buf, uint16_t buf_
 		msg->tkl = 0;
 
 		client_ctx->processed_req = msg;
+
+		/* Calling before lwm2m_registry_lock() to prevent deadlocks */
+		cb = (lwm2m_engine_pre_request_cb_t)atomic_ptr_get(&lwm2m_pre_request_cb);
+		if (cb != NULL) {
+			struct lwm2m_obj_path path;
+			struct coap_option options[4];
+			int nr_of_options = coap_find_options(&response, COAP_OPTION_URI_PATH,
+							      options, ARRAY_SIZE(options));
+			coap_options_to_path(options, nr_of_options, &path);
+			r = cb(&path);
+			if (r < 0) {
+				LOG_ERR("pre-request callback failed: %d", r);
+			}
+		}
 
 		lwm2m_registry_lock();
 		/* process the response to this request */
