@@ -42,6 +42,9 @@
 
 int coap_options_to_path(struct coap_option *opt, int options_count,
 				struct lwm2m_obj_path *path);
+
+typedef int (*lwm2m_engine_pre_request_cb_t)(struct lwm2m_message* msg);
+
 /* LwM2M message functions */
 struct lwm2m_message *lwm2m_get_message(struct lwm2m_ctx *client_ctx);
 struct lwm2m_message *find_msg(struct coap_pending *pending, struct coap_reply *reply);
@@ -61,6 +64,17 @@ int lwm2m_send_empty_ack(struct lwm2m_ctx *client_ctx, uint16_t mid);
 int lwm2m_register_payload_handler(struct lwm2m_message *msg);
 
 int lwm2m_perform_read_op(struct lwm2m_message *msg, uint16_t content_format);
+
+/**
+ * @brief Register a callback to be invoked on every LwM2M request.
+ *
+ * This callback will be called, before any other work gets done, on reads, writes and executes.
+ *
+ * @param cb Callback to be registered. Can be NULL to un-register a (potentially) registered
+ *           pre-request callback.
+ * @return  0 on success, -EBUSY if already registered
+ */
+int lwm2m_register_pre_request_cb(lwm2m_engine_pre_request_cb_t cb);
 
 int lwm2m_perform_composite_read_op(struct lwm2m_message *msg, uint16_t content_format,
 				    sys_slist_t *lwm2m_path_list);
