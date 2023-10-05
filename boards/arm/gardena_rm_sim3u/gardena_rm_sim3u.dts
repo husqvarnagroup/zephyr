@@ -112,6 +112,7 @@
 		compatible = "silabs,si4467";
 		spi-max-frequency = <2000000>;
 		xtal-frequency = <26000000>;
+		rx-rssi-offset = <15>;
 		reg = <0>;
 		gpio-0-gpios = <&gpio2 4 GPIO_ACTIVE_HIGH>;
 		gpio-1-gpios = <&gpio2 5 GPIO_ACTIVE_HIGH>;
