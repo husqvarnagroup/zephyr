@@ -772,6 +772,29 @@ static int mxicy_configure(const struct device *dev, const uint8_t *jedec_id)
 
 #endif /* ANY_INST_HAS_MXICY_MX25R_POWER_MODE */
 
+/* Reset the device and put it into default state.
+ *
+ * @param dev the device
+ *
+ * @retval negative codes if the attempt was made and failed
+ * @retval 0 successfully restored device to default
+ */
+static int spi_nor_reset_flash(const struct device *dev)
+{
+	int ret;
+
+	acquire_device(dev);
+	ret = spi_nor_cmd_write(dev, SPI_NOR_CMD_RESET_EN);
+
+	if (ret == 0) {
+		ret = spi_nor_cmd_write(dev, SPI_NOR_CMD_RESET_MEM);
+	}
+
+	release_device(dev);
+
+	return ret;
+}
+
 static int spi_nor_read(const struct device *dev, off_t addr, void *dest,
 			size_t size)
 {
@@ -1339,6 +1362,15 @@ static int spi_nor_configure(const struct device *dev)
 	release_device(dev);
 	if (rc < 0) {
 		LOG_ERR("Failed to wait until flash is ready (%d)", rc);
+		return -ENODEV;
+	}
+
+	/* reset the flash to the default settings, if the board start from a SW reset
+	 * flash could have changed basic communication settings
+	 */
+	rc = spi_nor_reset_flash(dev);
+	if (rc != 0) {
+		LOG_ERR("Reset flash failed: %d", rc);
 		return -ENODEV;
 	}
 
