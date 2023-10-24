@@ -40,9 +40,13 @@
 
 	gardena_antenna: gardena_antenna {
 		compatible = "gardena,antenna";
+		/* source for diversity control: 0=MCU, 1=TRX */
 		diversity-mode-gpios = <&gpio2 14 GPIO_ACTIVE_HIGH>;
+		/* diversity state (only relevant if mode is 0 (MCU)) */
 		diversity-state-gpios = <&gpio2 10 GPIO_ACTIVE_HIGH>;
+		/* selection of internal/external antenna (HCGW only; ANT_INT_EXT on schematic) */
 		antenna-control-gpios = <&gpio0 7 GPIO_ACTIVE_HIGH>;
+		/* antenna control signal from Core9G25 to RM (HCGW only; ANT_SELECT on schematic) */
 		antenna-input-gpios = <&gpio1 8 GPIO_ACTIVE_HIGH>;
 
 		led-red-input-gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>;
