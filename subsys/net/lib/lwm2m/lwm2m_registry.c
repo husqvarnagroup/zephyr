@@ -2080,21 +2080,9 @@ struct lwm2m_engine_res_inst *lwm2m_engine_get_res_inst(const struct lwm2m_obj_p
 
 bool lwm2m_engine_shall_report_obj_version(const struct lwm2m_engine_obj *obj)
 {
-	/* For non-core objects, report version other than 1.0 */
-	if (!obj->is_core) {
-		return obj->version_major != 1 || obj->version_minor != 0;
-	}
+	(void)default_obj_versions;
 
-	/* For core objects, report version based on default version array. */
-	for (size_t i = 0; i < ARRAY_SIZE(default_obj_versions); i++) {
-		if (obj->obj_id != default_obj_versions[i].obj_id) {
-			continue;
-		}
-
-		return obj->version_major != default_obj_versions[i].version_major ||
-		       obj->version_minor != default_obj_versions[i].version_minor;
-	}
-
+	// HACK: Always send ipso object version as a workaround
 	return true;
 }
 
