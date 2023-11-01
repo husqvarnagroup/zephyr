@@ -1950,12 +1950,8 @@ struct lwm2m_engine_res_inst *lwm2m_engine_get_res_inst(const struct lwm2m_obj_p
 
 bool lwm2m_engine_shall_report_obj_version(const struct lwm2m_engine_obj *obj)
 {
-	if (obj->is_core) {
-		return obj->version_major != LWM2M_PROTOCOL_VERSION_MAJOR ||
-		       obj->version_minor != LWM2M_PROTOCOL_VERSION_MINOR;
-	}
-
-	return obj->version_major != 1 || obj->version_minor != 0;
+	// HACK: Always send ipso object version as a workaround
+	return true;
 }
 
 #if defined(CONFIG_LWM2M_RESOURCE_DATA_CACHE_SUPPORT)
