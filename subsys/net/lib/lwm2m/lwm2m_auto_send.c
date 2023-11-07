@@ -38,11 +38,8 @@ typedef bool (*for_each_res_inst_callback_t)(const struct lwm2m_engine_res *obj_
 					     struct lwm2m_engine_res_inst *obj_res_inst,
 					     void *callback_ctx);
 
-static int64_t auto_send_enabled_after = -1;
-static int64_t auto_send_disabled_after = -1;
-static uint32_t auto_send_cooldown = 0;
+static bool auto_send_enabled = false;
 static int64_t last_auto_send_check = -1;
-static int64_t last_auto_send_transmission = -1;
 #if CONFIG_LWM2M_ENGINE_AUTO_SEND_CHECK_FREQUENCY_MAX > 0
 static bool ignore_max_frequency_for_next_check = false;
 #endif
@@ -96,20 +93,16 @@ static bool mark_all_resources_as_sent_cb(const struct lwm2m_engine_res *obj_res
 					  struct lwm2m_engine_res_inst *obj_res_inst,
 					  void *callback_data)
 {
-	int64_t *timestamp = (int64_t *)callback_data;
-	obj_res_inst->last_sent = *timestamp;
+	obj_res_inst->dirty = false;
 	return false;
 }
 
-static void mark_all_resources_as_sent(struct lwm2m_engine_obj_inst *obj_inst,
-				       const int64_t timestamp)
+static void mark_all_resources_as_sent(struct lwm2m_engine_obj_inst *obj_inst)
 {
-	for_each_res_inst(obj_inst, mark_all_resources_as_sent_cb, (void *)&timestamp);
+	for_each_res_inst(obj_inst, mark_all_resources_as_sent_cb, NULL);
 }
 
 struct find_obj_inst_resource_changes_ctx {
-	int64_t time_window_begin;
-	int64_t time_window_end_inclusive;
 	bool has_modified;
 	bool has_unmodified;
 };
@@ -121,17 +114,10 @@ static bool find_obj_inst_resource_changes_cb(const struct lwm2m_engine_res *obj
 	struct find_obj_inst_resource_changes_ctx *ctx =
 		(struct find_obj_inst_resource_changes_ctx *)callback_data;
 
-	// skip resources modified after current range in question
-	if (obj_res_inst->last_modified > ctx->time_window_end_inclusive) {
-		return false;
-	}
-
-	if (obj_res_inst->last_modified <= ctx->time_window_begin) {
-		ctx->has_unmodified = true;
-	}
-
-	if (obj_res_inst->last_modified > ctx->time_window_begin) {
+	if (obj_res_inst->dirty) {
 		ctx->has_modified = true;
+	} else {
+		ctx->has_unmodified = true;
 	}
 
 	// abort if found changes, we don't need to process all resources
@@ -139,12 +125,9 @@ static bool find_obj_inst_resource_changes_cb(const struct lwm2m_engine_res *obj
 }
 
 static void find_obj_inst_resource_changes(const struct lwm2m_engine_obj_inst *obj_inst,
-					   const int64_t timestamp, bool *has_modified,
-					   bool *has_unmodified)
+					   bool *has_modified, bool *has_unmodified)
 {
-	struct find_obj_inst_resource_changes_ctx ctx = {.time_window_begin = last_auto_send_check,
-							 .time_window_end_inclusive = timestamp,
-							 .has_modified = false,
+	struct find_obj_inst_resource_changes_ctx ctx = {.has_modified = false,
 							 .has_unmodified = false};
 
 	for_each_res_inst(obj_inst, find_obj_inst_resource_changes_cb, (void *)&ctx);
@@ -241,8 +224,6 @@ remember_partially_modified_object_inst(struct lwm2m_engine_obj_inst *obj_inst, 
 }
 
 struct add_modified_path_for_resource_changes_ctx {
-	int64_t time_window_begin;
-	int64_t time_window_end_inclusive;
 	struct lwm2m_engine_obj_inst *obj_inst;
 	struct lwm2m_obj_path *modified_paths;
 	int *modified_paths_count;
@@ -255,12 +236,7 @@ static bool add_modified_path_for_resource_changes_cb(const struct lwm2m_engine_
 	struct add_modified_path_for_resource_changes_ctx *ctx =
 		(struct add_modified_path_for_resource_changes_ctx *)callback_data;
 
-	// skip resources modified after current range in question
-	if (obj_res_inst->last_modified > ctx->time_window_end_inclusive) {
-		return false;
-	}
-
-	if (obj_res_inst->last_modified > ctx->time_window_begin) {
+	if (obj_res_inst->dirty) {
 		if (obj_res->multi_res_inst) {
 			add_modified_path_res_inst(ctx->obj_inst->obj->obj_id,
 						   ctx->obj_inst->obj_inst_id, obj_res->res_id,
@@ -274,19 +250,17 @@ static bool add_modified_path_for_resource_changes_cb(const struct lwm2m_engine_
 					      ctx->modified_paths, ctx->modified_paths_count);
 		}
 	}
+	obj_res_inst->dirty = false;
 
 	// process all resources
 	return false;
 }
 
 static void add_modified_path_for_resource_changes(struct lwm2m_engine_obj_inst *obj_inst,
-						   const int64_t timestamp,
 						   struct lwm2m_obj_path *modified_paths,
 						   int *modified_paths_count)
 {
 	struct add_modified_path_for_resource_changes_ctx ctx = {
-		.time_window_begin = last_auto_send_check,
-		.time_window_end_inclusive = timestamp,
 		.obj_inst = obj_inst,
 		.modified_paths = modified_paths,
 		.modified_paths_count = modified_paths_count};
@@ -439,58 +413,29 @@ static int add_matching_hints(struct lwm2m_obj_path modified_paths[], int modifi
 	return matches;
 }
 
-int lwm2m_engine_auto_send_enable(int64_t after, uint32_t cooldown)
+static void reset_pending_resources(void)
 {
-	if (after <= auto_send_disabled_after) {
-		LOG_ERR("Can't enable auto send before disabled time point");
-		return -EINVAL;
+	struct lwm2m_engine_obj_inst *obj_inst;
+	SYS_SLIST_FOR_EACH_CONTAINER(lwm2m_engine_obj_inst_list(), obj_inst, node) {
+		if (!obj_inst->resources || obj_inst->resource_count == 0U) {
+			continue;
+		}
+		mark_all_resources_as_sent(obj_inst);
 	}
-	if (after <= auto_send_enabled_after) {
-		LOG_ERR("Can't enable auto send before previous enabled time point");
-		return -EINVAL;
-	}
-
-	if (after <= auto_send_enabled_after) {
-		LOG_ERR("Can't enable auto send before previous enabled time point");
-		return -EINVAL;
-	}
-
-	auto_send_disabled_after = -1;
-	auto_send_enabled_after = after;
-	auto_send_cooldown = cooldown;
-
-	// set last auto send so that we ignore resources modified before enabling
-	last_auto_send_check = auto_send_enabled_after;
-#if CONFIG_LWM2M_ENGINE_AUTO_SEND_CHECK_FREQUENCY_MAX > 0
-	// allow for immediate check after enabling even if min frequency is enabled
-	ignore_max_frequency_for_next_check = true;
-#endif
-	// ensure that we don't run into cooldown
-	last_auto_send_transmission = last_auto_send_check - cooldown;
-
-	return 0;
 }
 
-int lwm2m_engine_auto_send_disable(int64_t after)
+void lwm2m_engine_auto_send_set(bool enable)
 {
-	if (auto_send_enabled_after < 0) {
-		LOG_ERR("Can't disable auto send because it is not enabled");
-		return -EINVAL;
+	if (enable) {
+		if (!auto_send_enabled) {
+			reset_pending_resources();
+		}
+#if CONFIG_LWM2M_ENGINE_AUTO_SEND_CHECK_FREQUENCY_MAX > 0
+		// allow for immediate check after enabling even if min frequency is enabled
+		ignore_max_frequency_for_next_check = true;
+#endif
 	}
-
-	if (after < auto_send_disabled_after) {
-		LOG_ERR("Can't disable auto send before previous disable time point");
-		return -EINVAL;
-	}
-
-	if (after < auto_send_enabled_after) {
-		LOG_ERR("Can't disable auto send before enabled time point");
-		return -EINVAL;
-	}
-
-	auto_send_disabled_after = after;
-
-	return 0;
+	auto_send_enabled = enable;
 }
 
 bool is_ignored_path(struct lwm2m_obj_path *path)
@@ -547,9 +492,7 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 	char log_path_str_buf[LWM2M_MAX_PATH_STR_SIZE];
 #endif
 
-	if (auto_send_enabled_after < 0 || timestamp <= auto_send_enabled_after ||
-	    (auto_send_disabled_after >= 0 && timestamp > auto_send_disabled_after) ||
-	    timestamp <= last_auto_send_check) {
+	if (!auto_send_enabled) {
 		return;
 	}
 
@@ -562,13 +505,6 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 	}
 #endif
 
-	if ((auto_send_cooldown > 0 &&
-	     (timestamp - last_auto_send_transmission) <= auto_send_cooldown)) {
-		LOG_DBG("Cooldown active. remaining: %" PRId64 " ms",
-			auto_send_cooldown - (timestamp - last_auto_send_transmission));
-		return;
-	}
-
 	lwm2m_registry_lock();
 
 	SYS_SLIST_FOR_EACH_CONTAINER (lwm2m_engine_obj_inst_list(), obj_inst, node) {
@@ -577,7 +513,7 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 		}
 
 		bool has_modified, has_unmodified;
-		find_obj_inst_resource_changes(obj_inst, timestamp, &has_modified, &has_unmodified);
+		find_obj_inst_resource_changes(obj_inst, &has_modified, &has_unmodified);
 
 		if (has_modified && !has_unmodified) {
 			LOG_DBG("Fully modified object: %d/%d", obj_inst->obj->obj_id,
@@ -592,7 +528,7 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 				goto cleanup;
 			}
 
-			mark_all_resources_as_sent(obj_inst, timestamp);
+			mark_all_resources_as_sent(obj_inst);
 		} else if (has_modified && has_unmodified) {
 			LOG_DBG("Partially modified object: %d/%d", obj_inst->obj->obj_id,
 				obj_inst->obj_inst_id);
@@ -611,7 +547,7 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 	SYS_SLIST_FOR_EACH_CONTAINER (&partial_update_list, obj_inst_ref, node) {
 		obj_inst = obj_inst_ref->obj_inst;
 
-		add_modified_path_for_resource_changes(obj_inst, timestamp, modified_paths,
+		add_modified_path_for_resource_changes(obj_inst, modified_paths,
 						       &modified_paths_count);
 	}
 
@@ -708,7 +644,6 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 		} else {
 			LOG_DBG("Nothing to send");
 		}
-		last_auto_send_transmission = timestamp;
 	}
 
 cleanup:

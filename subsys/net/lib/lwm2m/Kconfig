@@ -634,6 +634,15 @@ config LWM2M_ENGINE_AUTO_SEND_CHECK_FREQUENCY_MAX
 	help
 	  This setting can reduce checks frequency in case of many object / resources
 
+config LWM2M_ENGINE_AUTO_SEND_FORCE_SEND
+	bool "Force send of all resource on default"
+	default y
+	depends on LWM2M_RESOURCE_DATA_MODIFICATION_TRACKING
+	help
+	  Default behavior of all resources to be sent on every update even if the
+	  value has not changed. The behavior can be changed for each resource
+	  individually with lwm2m_set_res_force_send(..., true/false)
+
 endif # LWM2M_ENGINE_AUTO_SEND
 
 choice

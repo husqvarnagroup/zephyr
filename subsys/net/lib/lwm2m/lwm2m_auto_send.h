@@ -58,25 +58,12 @@ int lwm2m_engine_auto_send_add_next_path_hint(const struct lwm2m_obj_path *path)
 int lwm2m_engine_auto_send_ignore_path(const struct lwm2m_obj_path *path);
 
 /**
- * @brief Enable auto send for modified resources modified after certain point in time
+ * @brief Enable or disable auto send for modified resources
  *
- * @see k_uptime_get()
- *
- * @param after Uptime in milliseconds after which automatic sends should start
- * @param cooldown Number of milliseconds to wait between automatic sends
- * @return 0 for success or negative in case of error
+ * @param enable true to enable auto send
+ *               false to disable auto send
  */
-int lwm2m_engine_auto_send_enable(int64_t after, uint32_t cooldown);
-
-/**
- * @brief Disable auto send for modified resources modified after certain point in time
- *
- * @see k_uptime_get()
- *
- * @param after Uptime in milliseconds after which automatic sends should start
- * @return 0 for success or negative in case of error
- */
-int lwm2m_engine_auto_send_disable(int64_t after);
+void lwm2m_engine_auto_send_set(bool enable);
 
 void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, int64_t timestamp);
 

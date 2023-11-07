@@ -1799,6 +1799,17 @@ int lwm2m_engine_set_res_buf(const char *pathstr, void *buffer_ptr, uint16_t buf
 int lwm2m_set_res_buf(const struct lwm2m_obj_path *path, void *buffer_ptr, uint16_t buffer_len,
 		      uint16_t data_len, uint8_t data_flags);
 
+#if defined(CONFIG_LWM2M_RESOURCE_DATA_MODIFICATION_TRACKING)
+/**
+ * @brief Set the resource to be sent with every update, even if the value has not changed
+ *
+ * @param path LwM2M path as a struct
+ * @param force true to enable send on every update, false to send resource only on change
+ * @return 0 for success or negative in case of error.
+ */
+int lwm2m_set_res_force_send(const struct lwm2m_obj_path *path, bool force);
+#endif
+
 /**
  * @brief Set data buffer for a resource
  *
