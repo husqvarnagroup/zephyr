@@ -376,7 +376,7 @@ static int add_matching_hints(struct lwm2m_obj_path modified_paths[], int modifi
 {
 	struct lwm2m_obj_path *temp;
 #ifdef LWM2M_AUTO_SEND_DEBUG
-	char path_str_buf[LWM2M_MAX_PATH_STR_SIZE];
+	char log_path_str_buf[LWM2M_MAX_PATH_STR_SIZE];
 #endif
 	int matches = 0;
 	for (int i = 0; i < hints_count; ++i) {
@@ -415,11 +415,11 @@ static int add_matching_hints(struct lwm2m_obj_path modified_paths[], int modifi
 		}
 
 #ifdef LWM2M_AUTO_SEND_DEBUG
-		lwm2m_path_to_string(path_str_buf, sizeof(path_str_buf), &hints[i], hints[i].level);
+		lwm2m_path_log_buf(log_path_str_buf, &hints[i]);
 #endif
 		if (has_match) {
 #ifdef LWM2M_AUTO_SEND_DEBUG
-			LOG_DBG("Adding hint: %s", path_str_buf);
+			LOG_DBG("Adding hint: %s", log_path_str_buf);
 #endif
 			matches++;
 			if (lwm2m_engine_add_path_to_list(next_lwm2m_send_path_list,
@@ -430,7 +430,8 @@ static int add_matching_hints(struct lwm2m_obj_path modified_paths[], int modifi
 			}
 		} else {
 #ifdef LWM2M_AUTO_SEND_DEBUG
-			LOG_DBG("Ignoring hint: %s - does not match modified path", path_str_buf);
+			LOG_DBG("Ignoring hint: %s - does not match modified path",
+				log_path_str_buf);
 #endif
 		}
 	}
@@ -543,7 +544,7 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 
 	sys_slist_init(&partial_update_list);
 #ifdef LWM2M_AUTO_SEND_DEBUG
-	char path_str_buf[LWM2M_MAX_PATH_STR_SIZE];
+	char log_path_str_buf[LWM2M_MAX_PATH_STR_SIZE];
 #endif
 
 	if (auto_send_enabled_after < 0 || timestamp <= auto_send_enabled_after ||
@@ -631,9 +632,8 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 					    next_lwm2m_send_path_list_buf, MAX_SEND_PATHS_OVERALL);
 		for (int i = 0; i < modified_paths_count; ++i) {
 #ifdef LWM2M_AUTO_SEND_DEBUG
-			lwm2m_path_to_string(path_str_buf, sizeof(path_str_buf), &modified_paths[i],
-					     modified_paths[i].level);
-			LOG_DBG("Adding path for resource: %s", path_str_buf);
+			LOG_DBG("Adding path for resource: %s",
+				lwm2m_path_log_buf(log_path_str_buf, &modified_paths[i]));
 #endif
 			if (lwm2m_engine_add_path_to_list(&next_lwm2m_send_path_list,
 							  &next_lwm2m_send_path_free_list,
@@ -666,9 +666,7 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 		LOG_DBG("Before duplicate path removal:");
 
 		SYS_SLIST_FOR_EACH_CONTAINER_SAFE (&next_lwm2m_send_path_list, entry, tmp, node) {
-			lwm2m_path_to_string(path_str_buf, sizeof(path_str_buf), &entry->path,
-					     entry->path.level);
-			LOG_DBG("- %s", path_str_buf);
+			LOG_DBG("- %s", lwm2m_path_log_buf(log_path_str_buf, &entry->path));
 		}
 #endif
 		lwm2m_engine_clear_duplicate_path(&next_lwm2m_send_path_list,
@@ -676,9 +674,7 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 #ifdef LWM2M_AUTO_SEND_DEBUG
 		LOG_DBG("After duplicate path removal:");
 		SYS_SLIST_FOR_EACH_CONTAINER_SAFE (&next_lwm2m_send_path_list, entry, tmp, node) {
-			lwm2m_path_to_string(path_str_buf, sizeof(path_str_buf), &entry->path,
-					     entry->path.level);
-			LOG_DBG("- %s", path_str_buf);
+			LOG_DBG("- %s", lwm2m_path_log_buf(log_path_str_buf, &entry->path));
 		}
 #endif
 
@@ -692,13 +688,13 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 				memcpy(&next_lwm2m_send_paths[send_path_count], &entry->path, sizeof(entry->path));
 #ifdef LWM2M_AUTO_SEND_DEBUG
 				LOG_DBG("- %s",
-					next_lwm2m_send_path_strings_buffer[send_path_count]);
+					lwm2m_path_log_buf(log_path_str_buf, &entry->path));
 #endif
 				send_path_count++;
 			} else {
 #ifdef LWM2M_AUTO_SEND_DEBUG
 				LOG_DBG("- ignored %s",
-					next_lwm2m_send_path_strings_buffer[send_path_count]);
+					lwm2m_path_log_buf(log_path_str_buf, &entry->path));
 #endif
 			}
 		}
