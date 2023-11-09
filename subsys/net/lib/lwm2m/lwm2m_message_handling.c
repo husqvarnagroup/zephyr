@@ -303,6 +303,8 @@ STATIC int build_msg_block_for_send_default(struct lwm2m_message *msg, uint16_t 
 	} else {
 		/* Keep user data between blocks */
 		void *user_data = msg->reply ? msg->reply->user_data : NULL;
+		/* Create a backup before lwm2m_init_message() overwrites */
+		lwm2m_send_cb_t send_status_cb = msg->send_status_cb;
 
 		/* reuse message for next block. Copy token from the new query to allow
 		 * CoAP clients to use new token for every query of ongoing transaction
@@ -323,6 +325,12 @@ STATIC int build_msg_block_for_send_default(struct lwm2m_message *msg, uint16_t 
 			LOG_ERR("Unable to init lwm2m message for next block!");
 			return ret;
 		}
+
+		if (send_status_cb) {
+			msg->reply->user_data = msg;
+			msg->send_status_cb = send_status_cb;
+		}
+
 		if (msg->reply) {
 			msg->reply->user_data = user_data;
 		}
@@ -414,6 +422,9 @@ STATIC int build_msg_block_for_send_raw(struct lwm2m_message *msg, uint16_t bloc
 	if (block_num > 0) {
 		/* reuse message for next block */
 		tkl = coap_header_get_token(&msg->cpkt, token);
+		/* Create a backup before lwm2m_init_message() overwrites */
+		lwm2m_send_cb_t send_status_cb = msg->send_status_cb;
+
 		lwm2m_reset_message(msg, false);
 		msg->mid = coap_next_id();
 		msg->token = token;
@@ -423,6 +434,10 @@ STATIC int build_msg_block_for_send_raw(struct lwm2m_message *msg, uint16_t bloc
 			lwm2m_reset_message(msg, true);
 			LOG_ERR("Unable to init lwm2m message for next block!");
 			return ret;
+		}
+		if (send_status_cb) {
+			msg->reply->user_data = msg;
+			msg->send_status_cb = send_status_cb;
 		}
 	}
 
