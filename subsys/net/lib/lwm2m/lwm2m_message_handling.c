@@ -313,6 +313,8 @@ static int build_msg_block_for_send_default(struct lwm2m_message *msg, uint16_t 
 	} else {
 		/* reuse message for next block */
 		tkl = coap_header_get_token(&msg->cpkt, token);
+		lwm2m_send_cb_t send_status_cb = msg->send_status_cb;
+
 		lwm2m_reset_message(msg, false);
 		msg->mid = coap_next_id();
 		msg->token = token;
@@ -322,6 +324,10 @@ static int build_msg_block_for_send_default(struct lwm2m_message *msg, uint16_t 
 			lwm2m_reset_message(msg, true);
 			LOG_ERR("Unable to init lwm2m message for next block!");
 			return ret;
+		}
+		if (send_status_cb) {
+			msg->reply->user_data = msg;
+			msg->send_status_cb = send_status_cb;
 		}
 	}
 
@@ -405,6 +411,8 @@ static int build_msg_block_for_send_raw(struct lwm2m_message *msg, uint16_t bloc
 	if (block_num > 0) {
 		/* reuse message for next block */
 		tkl = coap_header_get_token(&msg->cpkt, token);
+		lwm2m_send_cb_t send_status_cb = msg->send_status_cb;
+
 		lwm2m_reset_message(msg, false);
 		msg->mid = coap_next_id();
 		msg->token = token;
@@ -414,6 +422,10 @@ static int build_msg_block_for_send_raw(struct lwm2m_message *msg, uint16_t bloc
 			lwm2m_reset_message(msg, true);
 			LOG_ERR("Unable to init lwm2m message for next block!");
 			return ret;
+		}
+		if (send_status_cb) {
+			msg->reply->user_data = msg;
+			msg->send_status_cb = send_status_cb;
 		}
 	}
 
