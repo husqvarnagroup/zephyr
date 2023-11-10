@@ -17,6 +17,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <stdlib.h>
 #include <string.h>
 
+#define SEND_RESPONSE_TIMEOUT  CONFIG_LWM2M_ENGINE_AUTO_SEND_RESPONSE_TIMEOUT
 #define MAX_MODIFIED_RESOURCE  CONFIG_LWM2M_ENGINE_AUTO_SEND_MODIFIED_RESOURCES_MAX
 #define MAX_NEXT_SEND_HINTS    CONFIG_LWM2M_ENGINE_AUTO_SEND_NEXT_PATH_HINTS_MAX
 #define MAX_STATIC_SEND_HINTS  CONFIG_LWM2M_ENGINE_AUTO_SEND_STATIC_PATH_HINTS_MAX
@@ -62,6 +63,11 @@ static struct lwm2m_obj_path next_lwm2m_send_paths[MAX_SEND_PATHS_OVERALL];
 static struct lwm2m_obj_path modified_paths[MAX_MODIFIED_RESOURCE];
 static struct lwm2m_auto_send_object_inst_ref partial_update_list_buf[MAX_MODIFIED_RESOURCE];
 static sys_slist_t partial_update_list;
+
+static int resources_to_send_count = 0;
+static time_t last_sent_time = -1;
+
+_Static_assert((time_t)(-1) < 0, "last_sent_time must be a signed type!");
 
 static void for_each_res_inst(const struct lwm2m_engine_obj_inst *obj_inst,
 			      for_each_res_inst_callback_t callback, void *callback_ctx)
@@ -237,6 +243,12 @@ static bool add_modified_path_for_resource_changes_cb(const struct lwm2m_engine_
 		(struct add_modified_path_for_resource_changes_ctx *)callback_data;
 
 	if (obj_res_inst->dirty) {
+
+		if (resources_to_send_count >= MAX_MODIFIED_RESOURCE) {
+			return true;
+		}
+		resources_to_send_count++;
+
 		if (obj_res->multi_res_inst) {
 			add_modified_path_res_inst(ctx->obj_inst->obj->obj_id,
 						   ctx->obj_inst->obj_inst_id, obj_res->res_id,
@@ -479,6 +491,25 @@ bool is_ignored_path(struct lwm2m_obj_path *path)
 	return false;
 }
 
+static void send_reply_cb(enum lwm2m_send_status status)
+{
+#define STRING "Response %s after %llims"
+	time_t duration = k_uptime_get() - last_sent_time;
+	last_sent_time = -1;
+
+	switch (status) {
+	case LWM2M_SEND_STATUS_SUCCESS:
+		LOG_INF(STRING, "SUCCESS", duration);
+		break;
+	case LWM2M_SEND_STATUS_FAILURE:
+		LOG_ERR(STRING, "FAILURE", duration);
+		break;
+	case LWM2M_SEND_STATUS_TIMEOUT:
+		LOG_ERR(STRING, "TIMEOUT", duration);
+		break;
+	}
+}
+
 void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 {
 	int modified_paths_count = 0;
@@ -491,6 +522,16 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 #ifdef LWM2M_AUTO_SEND_DEBUG
 	char log_path_str_buf[LWM2M_MAX_PATH_STR_SIZE];
 #endif
+
+	if (last_sent_time > 0) {
+		if (k_uptime_get() - last_sent_time < SEND_RESPONSE_TIMEOUT) {
+			return;
+		} else {
+			LOG_ERR("Auto send still waiting for response - abort after %llims",
+				k_uptime_get() - last_sent_time);
+			last_sent_time = -1;
+		}
+	}
 
 	if (!auto_send_enabled) {
 		return;
@@ -506,6 +547,7 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 #endif
 
 	lwm2m_registry_lock();
+	resources_to_send_count = 0;
 
 	SYS_SLIST_FOR_EACH_CONTAINER (lwm2m_engine_obj_inst_list(), obj_inst, node) {
 		if (!obj_inst->resources || obj_inst->resource_count == 0U) {
@@ -516,6 +558,13 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 		find_obj_inst_resource_changes(obj_inst, &has_modified, &has_unmodified);
 
 		if (has_modified && !has_unmodified) {
+
+			if (resources_to_send_count + obj_inst->resource_count >
+			    MAX_MODIFIED_RESOURCE) {
+				break;
+			}
+			resources_to_send_count += obj_inst->resource_count;
+
 			LOG_DBG("Fully modified object: %d/%d", obj_inst->obj->obj_id,
 				obj_inst->obj_inst_id);
 
@@ -636,11 +685,16 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 		}
 
 		if (send_path_count > 0) {
-			rc = lwm2m_send_cb(ctx, next_lwm2m_send_paths, send_path_count, NULL);
+			rc = lwm2m_send_cb(ctx, next_lwm2m_send_paths, send_path_count,
+					   send_reply_cb);
 			if (rc < 0) {
 				LOG_ERR("Automatic lwm2m send failed");
 				goto cleanup;
 			}
+			last_sent_time = k_uptime_get();
+			LOG_INF("Send total %i paths and %i resources", send_path_count,
+				resources_to_send_count);
+
 		} else {
 			LOG_DBG("Nothing to send");
 		}

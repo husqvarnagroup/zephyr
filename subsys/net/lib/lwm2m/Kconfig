@@ -634,6 +634,13 @@ config LWM2M_ENGINE_AUTO_SEND_CHECK_FREQUENCY_MAX
 	help
 	  This setting can reduce checks frequency in case of many object / resources
 
+config LWM2M_ENGINE_AUTO_SEND_RESPONSE_TIMEOUT
+	int "Timeout in milliseconds to wait for a send response."
+	default 100000
+	help
+	  This value should be bigger than the time to receive the
+	  LWM2M_SEND_STATUS_TIMEOUT state in a send callback.
+
 config LWM2M_ENGINE_AUTO_SEND_FORCE_SEND
 	bool "Force send of all resource on default"
 	default y
