@@ -1808,6 +1808,20 @@ int lwm2m_set_res_buf(const struct lwm2m_obj_path *path, void *buffer_ptr, uint1
  * @return 0 for success or negative in case of error.
  */
 int lwm2m_set_res_force_send(const struct lwm2m_obj_path *path, bool force);
+
+/**
+ * @brief Set the resource to report the value back when it is written by an external source
+ *
+ * By default, a resource will be set to dirty when it is set by an external source (e.g. gateway)
+ * and the auto send mechanism will report the new value back to the gateway. Use this function to
+ * configure whether or not this mechanism shall be used for a given lwm2m path.
+ *
+ * @param path LwM2M path as a struct
+ * @param report_after_write true to send a report message after a resource has been written
+ *                           false to report nothing after the resource has been written
+ * @return 0 for success or negative in case of error.
+ */
+int lwm2m_set_res_report_after_write(const struct lwm2m_obj_path *path, bool report_after_write);
 #endif
 
 /**

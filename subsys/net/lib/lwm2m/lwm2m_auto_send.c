@@ -19,10 +19,9 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #define SEND_RESPONSE_TIMEOUT  CONFIG_LWM2M_ENGINE_AUTO_SEND_RESPONSE_TIMEOUT
 #define MAX_MODIFIED_RESOURCE  CONFIG_LWM2M_ENGINE_AUTO_SEND_MODIFIED_RESOURCES_MAX
-#define MAX_NEXT_SEND_HINTS    CONFIG_LWM2M_ENGINE_AUTO_SEND_NEXT_PATH_HINTS_MAX
 #define MAX_STATIC_SEND_HINTS  CONFIG_LWM2M_ENGINE_AUTO_SEND_STATIC_PATH_HINTS_MAX
 #define MAX_IGNORED_PATHS      CONFIG_LWM2M_ENGINE_AUTO_SEND_IGNORED_PATHS_MAX
-#define MAX_SEND_PATHS_OVERALL (MAX_MODIFIED_RESOURCE + MAX_NEXT_SEND_HINTS + MAX_STATIC_SEND_HINTS)
+#define MAX_SEND_PATHS_OVERALL (MAX_MODIFIED_RESOURCE + MAX_STATIC_SEND_HINTS)
 
 #ifdef CONFIG_LWM2M_LOG_LEVEL_DBG
 #define LWM2M_AUTO_SEND_DEBUG 1
@@ -41,12 +40,10 @@ typedef bool (*for_each_res_inst_callback_t)(const struct lwm2m_engine_res *obj_
 
 static bool auto_send_enabled = false;
 static int64_t last_auto_send_check = -1;
+static bool auto_send_recover = false;
 #if CONFIG_LWM2M_ENGINE_AUTO_SEND_CHECK_FREQUENCY_MAX > 0
 static bool ignore_max_frequency_for_next_check = false;
 #endif
-
-static int next_send_hints_count = 0;
-static struct lwm2m_obj_path next_send_hints[MAX_NEXT_SEND_HINTS] = {};
 
 static int static_send_hints_count = 0;
 static struct lwm2m_obj_path static_send_hints[MAX_STATIC_SEND_HINTS] = {};
@@ -64,7 +61,6 @@ static struct lwm2m_obj_path modified_paths[MAX_MODIFIED_RESOURCE];
 static struct lwm2m_auto_send_object_inst_ref partial_update_list_buf[MAX_MODIFIED_RESOURCE];
 static sys_slist_t partial_update_list;
 
-static int resources_to_send_count = 0;
 static time_t last_sent_time = -1;
 
 _Static_assert((time_t)(-1) < 0, "last_sent_time must be a signed type!");
@@ -95,21 +91,55 @@ static void for_each_res_inst(const struct lwm2m_engine_obj_inst *obj_inst,
 	}
 }
 
-static bool mark_all_resources_as_sent_cb(const struct lwm2m_engine_res *obj_res,
-					  struct lwm2m_engine_res_inst *obj_res_inst,
-					  void *callback_data)
+static bool unmark_resources_cb(const struct lwm2m_engine_res *obj_res,
+					   struct lwm2m_engine_res_inst *obj_res_inst,
+					   void *callback_data)
 {
+	obj_res_inst->dirty = false;
+	obj_res_inst->sending = false;
+	return false;
+}
+
+static bool mark_resources_as_dirty_cb(const struct lwm2m_engine_res *obj_res,
+					   struct lwm2m_engine_res_inst *obj_res_inst,
+					   void *callback_data)
+{
+	obj_res_inst->dirty = true;
+	return false;
+}
+
+static bool mark_resources_as_sending_cb(const struct lwm2m_engine_res *obj_res,
+					     struct lwm2m_engine_res_inst *obj_res_inst,
+					     void *callback_data)
+{
+	obj_res_inst->sending = true;
 	obj_res_inst->dirty = false;
 	return false;
 }
 
-static void mark_all_resources_as_sent(struct lwm2m_engine_obj_inst *obj_inst)
+static bool mark_sending_resources_as_dirty_cb(const struct lwm2m_engine_res *obj_res,
+					       struct lwm2m_engine_res_inst *obj_res_inst,
+					       void *callback_data)
 {
-	for_each_res_inst(obj_inst, mark_all_resources_as_sent_cb, NULL);
+	if (obj_res_inst->sending) {
+		obj_res_inst->sending = false;
+		obj_res_inst->dirty = true;
+	}
+	return false;
+}
+
+static bool mark_resources_as_sent_cb(const struct lwm2m_engine_res *obj_res,
+					      struct lwm2m_engine_res_inst *obj_res_inst,
+					      void *callback_data)
+{
+	if (obj_res_inst->sending) {
+		obj_res_inst->sending = false;
+	}
+	return false;
 }
 
 struct find_obj_inst_resource_changes_ctx {
-	bool has_modified;
+	uint8_t modified_count;
 	bool has_unmodified;
 };
 
@@ -117,28 +147,25 @@ static bool find_obj_inst_resource_changes_cb(const struct lwm2m_engine_res *obj
 					      struct lwm2m_engine_res_inst *obj_res_inst,
 					      void *callback_data)
 {
-	struct find_obj_inst_resource_changes_ctx *ctx =
-		(struct find_obj_inst_resource_changes_ctx *)callback_data;
+	struct find_obj_inst_resource_changes_ctx *ctx = callback_data;
 
 	if (obj_res_inst->dirty) {
-		ctx->has_modified = true;
+		ctx->modified_count++;
 	} else {
 		ctx->has_unmodified = true;
 	}
-
-	// abort if found changes, we don't need to process all resources
-	return ctx->has_unmodified && ctx->has_modified;
+	return 0;
 }
 
 static void find_obj_inst_resource_changes(const struct lwm2m_engine_obj_inst *obj_inst,
-					   bool *has_modified, bool *has_unmodified)
+					   uint8_t *modified_count, bool *has_unmodified)
 {
-	struct find_obj_inst_resource_changes_ctx ctx = {.has_modified = false,
+	struct find_obj_inst_resource_changes_ctx ctx = {.modified_count = 0,
 							 .has_unmodified = false};
 
 	for_each_res_inst(obj_inst, find_obj_inst_resource_changes_cb, (void *)&ctx);
 
-	*has_modified = ctx.has_modified;
+	*modified_count = ctx.modified_count;
 	*has_unmodified = ctx.has_unmodified;
 }
 
@@ -243,25 +270,18 @@ static bool add_modified_path_for_resource_changes_cb(const struct lwm2m_engine_
 		(struct add_modified_path_for_resource_changes_ctx *)callback_data;
 
 	if (obj_res_inst->dirty) {
-
-		if (resources_to_send_count >= MAX_MODIFIED_RESOURCE) {
-			return true;
-		}
-		resources_to_send_count++;
-
 		if (obj_res->multi_res_inst) {
 			add_modified_path_res_inst(ctx->obj_inst->obj->obj_id,
 						   ctx->obj_inst->obj_inst_id, obj_res->res_id,
 						   obj_res_inst->res_inst_id, ctx->modified_paths,
 						   ctx->modified_paths_count);
-
-			//
 		} else {
 			add_modified_path_res(ctx->obj_inst->obj->obj_id,
 					      ctx->obj_inst->obj_inst_id, obj_res->res_id,
 					      ctx->modified_paths, ctx->modified_paths_count);
 		}
 	}
+	obj_res_inst->sending = true;
 	obj_res_inst->dirty = false;
 
 	// process all resources
@@ -278,19 +298,6 @@ static void add_modified_path_for_resource_changes(struct lwm2m_engine_obj_inst 
 		.modified_paths_count = modified_paths_count};
 
 	for_each_res_inst(obj_inst, add_modified_path_for_resource_changes_cb, (void *)&ctx);
-}
-
-int lwm2m_engine_auto_send_add_static_path_hint_str(const char *path_str)
-{
-	struct lwm2m_obj_path path;
-	int rc;
-
-	rc = lwm2m_string_to_path(path_str, &path, '/');
-	if (rc < 0) {
-		return rc;
-	}
-
-	return lwm2m_engine_auto_send_add_static_path_hint(&path);
 }
 
 int lwm2m_engine_auto_send_add_static_path_hint(const struct lwm2m_obj_path *path)
@@ -312,28 +319,6 @@ int lwm2m_engine_auto_send_add_static_path_hint(const struct lwm2m_obj_path *pat
 
 	memcpy(&static_send_hints[static_send_hints_count], path, sizeof(struct lwm2m_obj_path));
 	static_send_hints_count++;
-
-	return 0;
-}
-
-int lwm2m_engine_auto_send_add_next_path_hint(const struct lwm2m_obj_path *path)
-{
-	if (next_send_hints_count >= MAX_NEXT_SEND_HINTS) {
-		return -ENOMEM;
-	}
-
-	if (path->level == LWM2M_PATH_LEVEL_NONE) {
-		LOG_ERR("Hint must have level");
-		return -EINVAL;
-	}
-
-	if (path->level == LWM2M_PATH_LEVEL_RESOURCE_INST) {
-		LOG_ERR("Hint can't have resource instance level");
-		return -EINVAL;
-	}
-
-	memcpy(&next_send_hints[next_send_hints_count], path, sizeof(struct lwm2m_obj_path));
-	next_send_hints_count++;
 
 	return 0;
 }
@@ -427,13 +412,41 @@ static int add_matching_hints(struct lwm2m_obj_path modified_paths[], int modifi
 
 static void reset_pending_resources(void)
 {
+	lwm2m_registry_lock();
 	struct lwm2m_engine_obj_inst *obj_inst;
 	SYS_SLIST_FOR_EACH_CONTAINER(lwm2m_engine_obj_inst_list(), obj_inst, node) {
 		if (!obj_inst->resources || obj_inst->resource_count == 0U) {
 			continue;
 		}
-		mark_all_resources_as_sent(obj_inst);
+		for_each_res_inst(obj_inst, unmark_resources_cb, NULL);
 	}
+	lwm2m_registry_unlock();
+}
+
+static void mark_resources_as_send_fail(void)
+{
+	lwm2m_registry_lock();
+	struct lwm2m_engine_obj_inst *obj_inst;
+	SYS_SLIST_FOR_EACH_CONTAINER(lwm2m_engine_obj_inst_list(), obj_inst, node) {
+		if (!obj_inst->resources || obj_inst->resource_count == 0U) {
+			continue;
+		}
+		for_each_res_inst(obj_inst, mark_sending_resources_as_dirty_cb, NULL);
+	}
+	lwm2m_registry_unlock();
+}
+
+static void mark_resources_as_send_pass(void)
+{
+	lwm2m_registry_lock();
+	struct lwm2m_engine_obj_inst *obj_inst;
+	SYS_SLIST_FOR_EACH_CONTAINER(lwm2m_engine_obj_inst_list(), obj_inst, node) {
+		if (!obj_inst->resources || obj_inst->resource_count == 0U) {
+			continue;
+		}
+		for_each_res_inst(obj_inst, mark_resources_as_sent_cb, NULL);
+	}
+	lwm2m_registry_unlock();
 }
 
 void lwm2m_engine_auto_send_set(bool enable)
@@ -448,6 +461,21 @@ void lwm2m_engine_auto_send_set(bool enable)
 #endif
 	}
 	auto_send_enabled = enable;
+}
+
+int lwm2m_engine_auto_send_send_obj_inst(const struct lwm2m_obj_path *path)
+{
+	lwm2m_registry_lock();
+
+	struct lwm2m_engine_obj_inst *obj_inst = lwm2m_engine_get_obj_inst(path);
+	if (obj_inst == NULL) {
+		lwm2m_registry_unlock();
+		return -ENOENT;
+	}
+	for_each_res_inst(obj_inst, mark_resources_as_dirty_cb, NULL);
+
+	lwm2m_registry_unlock();
+	return 0;
 }
 
 bool is_ignored_path(struct lwm2m_obj_path *path)
@@ -500,12 +528,15 @@ static void send_reply_cb(enum lwm2m_send_status status)
 	switch (status) {
 	case LWM2M_SEND_STATUS_SUCCESS:
 		LOG_INF(STRING, "SUCCESS", duration);
+		mark_resources_as_send_pass();
 		break;
 	case LWM2M_SEND_STATUS_FAILURE:
 		LOG_ERR(STRING, "FAILURE", duration);
+		mark_resources_as_send_fail();
 		break;
 	case LWM2M_SEND_STATUS_TIMEOUT:
 		LOG_ERR(STRING, "TIMEOUT", duration);
+		mark_resources_as_send_fail();
 		break;
 	}
 }
@@ -513,6 +544,7 @@ static void send_reply_cb(enum lwm2m_send_status status)
 void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 {
 	int modified_paths_count = 0;
+	int resources_to_send_count = 0;
 	int partial_update_object_inst_count = 0;
 	int rc;
 	struct lwm2m_engine_obj_inst *obj_inst;
@@ -526,11 +558,11 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 	if (last_sent_time > 0) {
 		if (k_uptime_get() - last_sent_time < SEND_RESPONSE_TIMEOUT) {
 			return;
-		} else {
-			LOG_ERR("Auto send still waiting for response - abort after %llims",
-				k_uptime_get() - last_sent_time);
-			last_sent_time = -1;
 		}
+		LOG_ERR("Auto send still waiting for response - abort after %llims",
+			k_uptime_get() - last_sent_time);
+		mark_resources_as_send_fail();
+		last_sent_time = -1;
 	}
 
 	if (!auto_send_enabled) {
@@ -547,23 +579,27 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 #endif
 
 	lwm2m_registry_lock();
-	resources_to_send_count = 0;
 
 	SYS_SLIST_FOR_EACH_CONTAINER (lwm2m_engine_obj_inst_list(), obj_inst, node) {
 		if (!obj_inst->resources || obj_inst->resource_count == 0U) {
 			continue;
 		}
 
-		bool has_modified, has_unmodified;
-		find_obj_inst_resource_changes(obj_inst, &has_modified, &has_unmodified);
+		uint8_t modified_count = 0;
+		bool has_unmodified;
+		find_obj_inst_resource_changes(obj_inst, &modified_count, &has_unmodified);
 
-		if (has_modified && !has_unmodified) {
+		if (modified_count > MAX_MODIFIED_RESOURCE) {
+			LOG_ERR("Can't send object: %d/%d, it has too many resources (%i). "
+				"Update CONFIG_LWM2M_ENGINE_AUTO_SEND_MODIFIED_RESOURCES_MAX",
+				obj_inst->obj->obj_id, obj_inst->obj_inst_id, modified_count);
+		}
 
-			if (resources_to_send_count + obj_inst->resource_count >
-			    MAX_MODIFIED_RESOURCE) {
-				break;
+		if (modified_count > 0 && !has_unmodified) {
+			if (resources_to_send_count + modified_count > MAX_MODIFIED_RESOURCE) {
+				continue;
 			}
-			resources_to_send_count += obj_inst->resource_count;
+			resources_to_send_count += modified_count;
 
 			LOG_DBG("Fully modified object: %d/%d", obj_inst->obj->obj_id,
 				obj_inst->obj_inst_id);
@@ -577,8 +613,11 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 				goto cleanup;
 			}
 
-			mark_all_resources_as_sent(obj_inst);
-		} else if (has_modified && has_unmodified) {
+			for_each_res_inst(obj_inst, mark_resources_as_sending_cb, NULL);
+		} else if (modified_count > 0 && has_unmodified &&
+			   resources_to_send_count + modified_count <= MAX_MODIFIED_RESOURCE) {
+			resources_to_send_count += modified_count;
+
 			LOG_DBG("Partially modified object: %d/%d", obj_inst->obj->obj_id,
 				obj_inst->obj_inst_id);
 
@@ -590,6 +629,13 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 					MAX_MODIFIED_RESOURCE);
 				goto cleanup;
 			}
+		}
+
+		if (resources_to_send_count && auto_send_recover) {
+			auto_send_recover = false;
+			LOG_INF("Recover from previous send error by reducing the amount of paths "
+				"to send at once.");
+			break;
 		}
 	}
 
@@ -603,8 +649,7 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 	last_auto_send_check = timestamp;
 
 	if (modified_paths_count > 0) {
-		if (modified_paths_count > CONFIG_LWM2M_COMPOSITE_PATH_LIST_SIZE &&
-		    next_send_hints_count == 0) {
+		if (modified_paths_count > CONFIG_LWM2M_COMPOSITE_PATH_LIST_SIZE) {
 			LOG_WRN("More than %d modified paths: %d - use send hints to reduce "
 				"paths",
 				CONFIG_LWM2M_COMPOSITE_PATH_LIST_SIZE, modified_paths_count);
@@ -628,16 +673,6 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 				goto cleanup;
 			}
 		}
-
-		rc = add_matching_hints(modified_paths, modified_paths_count, next_send_hints,
-					next_send_hints_count, &next_lwm2m_send_path_list,
-					&next_lwm2m_send_path_free_list);
-		if (rc < 0) {
-			LOG_ERR("Could not add next send hints: %d", rc);
-			goto cleanup;
-		}
-		// clear next send hints
-		next_send_hints_count = 0;
 
 		rc = add_matching_hints(modified_paths, modified_paths_count, static_send_hints,
 					static_send_hints_count, &next_lwm2m_send_path_list,
@@ -689,6 +724,8 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 					   send_reply_cb);
 			if (rc < 0) {
 				LOG_ERR("Automatic lwm2m send failed");
+				mark_resources_as_send_fail();
+				auto_send_recover = true;
 				goto cleanup;
 			}
 			last_sent_time = k_uptime_get();

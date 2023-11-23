@@ -22,28 +22,12 @@
 int lwm2m_engine_auto_send_add_static_path_hint(const struct lwm2m_obj_path *path);
 
 /**
- * @see lwm2m_engine_auto_send_add_static_path_hint
- *
- * @param path_str
- * @return
- */
-__deprecated
-int lwm2m_engine_auto_send_add_static_path_hint_str(const char *path_str);
-
-/**
- * @brief Add a path as hint for the next auto send.
- *
- * If a resource is modified below that path and will be automatically sent,
- * then this path will be used instead. This allows to send resources with the next auto
- * send that were not modified but are desired to be transmitted together with the modified
- * resources. It also allows to reduce the number of paths that need to be processed internally
- * (which are limited to CONFIG_LWM2M_COMPOSITE_PATH_LIST_SIZE) when modifying (almost) all
- * resources of one or multiple objects.
+ * @brief Send an object instance with all its contained resources at once
  *
  * @param[in] path
  * @return 0 for success or negative in case of error
  */
-int lwm2m_engine_auto_send_add_next_path_hint(const struct lwm2m_obj_path *path);
+int lwm2m_engine_auto_send_send_obj_inst(const struct lwm2m_obj_path *path);
 
 /**
  * @brief Add a path to be ignored for auto send.

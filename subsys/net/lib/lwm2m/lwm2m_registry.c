@@ -506,6 +506,36 @@ int lwm2m_set_res_force_send(const struct lwm2m_obj_path *path, bool force)
 	k_mutex_unlock(&registry_lock);
 	return ret;
 }
+
+int lwm2m_set_res_report_after_write(const struct lwm2m_obj_path *path, bool report_after_write)
+{
+	int ret;
+	struct lwm2m_engine_res_inst *res_inst = NULL;
+
+	if (path->level < LWM2M_PATH_LEVEL_RESOURCE) {
+		LOG_ERR("path must have at least 3 parts");
+		return -EINVAL;
+	}
+
+	k_mutex_lock(&registry_lock, K_FOREVER);
+	/* look up resource obj */
+	ret = path_to_objs(path, NULL, NULL, NULL, &res_inst);
+	if (ret < 0) {
+		k_mutex_unlock(&registry_lock);
+		return ret;
+	}
+
+	if (!res_inst) {
+		LOG_ERR("res instance %d not found", path->res_inst_id);
+		k_mutex_unlock(&registry_lock);
+		return -ENOENT;
+	}
+
+	res_inst->report_after_write = report_after_write;
+
+	k_mutex_unlock(&registry_lock);
+	return ret;
+}
 #endif
 
 int lwm2m_engine_set_res_buf(const char *pathstr, void *buffer_ptr, uint16_t buffer_len,
@@ -764,7 +794,7 @@ static int lwm2m_engine_set(const struct lwm2m_obj_path *path, const void *value
 
 #if defined(CONFIG_LWM2M_RESOURCE_DATA_MODIFICATION_TRACKING)
 	changed |= res_inst->force;
-	res_inst->dirty = changed;
+	res_inst->dirty |= changed;
 #endif
 
 	if (changed && LWM2M_HAS_PERM(obj_field, LWM2M_PERM_R)) {
