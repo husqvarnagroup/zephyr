@@ -157,10 +157,10 @@
 
 		slot0_partition: partition@0 {
 			label = "image-0";
-			reg = <0x00000000 DT_SIZE_K(1664)>;
+			reg = <0x00000000 DT_SIZE_K(192)>;
 		};
 
-		storage_partition: partition@250000 {
+		storage_partition: partition@30000 {
 			label = "storage";
 			reg = <0x00030000 DT_SIZE_K(64)>;
 		};
