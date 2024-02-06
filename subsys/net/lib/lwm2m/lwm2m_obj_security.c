@@ -17,6 +17,10 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include "lwm2m_object.h"
 #include "lwm2m_engine.h"
 
+#ifdef CONFIG_LWM2M_ENGINE_AUTO_SEND
+#include "lwm2m_auto_send.h"
+#endif
+
 #define SECURITY_VERSION_MAJOR 1
 #if defined(CONFIG_LWM2M_SECURITY_OBJECT_VERSION_1_1)
 #define SECURITY_VERSION_MINOR 1
@@ -232,6 +236,10 @@ static int lwm2m_security_init(void)
 	if (ret < 0) {
 		LOG_ERR("Create LWM2M security instance 0 error: %d", ret);
 	}
+
+	#ifdef CONFIG_LWM2M_ENGINE_AUTO_SEND
+	lwm2m_engine_auto_send_ignore_path( &LWM2M_OBJ( LWM2M_OBJECT_SECURITY_ID ) );
+	#endif
 
 	return ret;
 }

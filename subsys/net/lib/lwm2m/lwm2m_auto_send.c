@@ -740,3 +740,18 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 cleanup:
 	lwm2m_registry_unlock();
 }
+
+void lwm2m_engine_auto_send_all_objs( void )
+{
+	struct lwm2m_engine_obj_inst *obj_inst;
+
+	lwm2m_registry_lock();
+	SYS_SLIST_FOR_EACH_CONTAINER (lwm2m_engine_obj_inst_list(), obj_inst, node) {
+		if (!obj_inst->resources || obj_inst->resource_count == 0U) {
+			continue;
+		}
+
+		for_each_res_inst(obj_inst, mark_resources_as_dirty_cb, NULL);
+	}
+	lwm2m_registry_unlock();
+}

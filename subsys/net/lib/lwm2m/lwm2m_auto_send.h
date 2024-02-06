@@ -51,4 +51,9 @@ void lwm2m_engine_auto_send_set(bool enable);
 
 void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, int64_t timestamp);
 
+/**
+ * @brief Set all objs dirty to be resent
+ */
+void lwm2m_engine_auto_send_all_objs( void );
+
 #endif /* LWM2M_AUTO_SEND_H */
