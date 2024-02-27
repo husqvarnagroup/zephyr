@@ -94,6 +94,9 @@ struct ctr_params {
 	 * such that ivlen + ctr_len = keylen
 	 */
 	uint32_t ctr_len;
+
+	/** Initialization vector, used to initialize counter */
+	const uint8_t *iv;
 };
 
 struct gcm_params {

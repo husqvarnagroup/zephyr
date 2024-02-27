@@ -21,6 +21,8 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(tinycrypt);
 
+#include <stdbool.h>
+
 #define CRYPTO_MAX_SESSION CONFIG_CRYPTO_TINYCRYPT_SHIM_MAX_SESSION
 
 static struct tc_shim_drv_state tc_driver_state[CRYPTO_MAX_SESSION];
@@ -114,16 +116,22 @@ static int do_cbc_decrypt(struct cipher_ctx *ctx, struct cipher_pkt *op,
 }
 
 static int do_ctr_op(struct cipher_ctx *ctx, struct cipher_pkt *op,
-		     uint8_t *iv)
+		     uint8_t *ctr)
 {
 	struct tc_shim_drv_state *data =  ctx->drv_sessn_state;
-	uint8_t ctr[16] = {0};	/* CTR mode Counter =  iv:ctr */
-	int ivlen = ctx->keylen - (ctx->mode_params.ctr_info.ctr_len >> 3);
 
-	/* Tinycrypt takes the last 4 bytes of the counter parameter as the
-	 * true counter start. IV forms the first 12 bytes of the split counter.
-	 */
-	memcpy(ctr, iv, ivlen);
+	/* The counter needs to be initialized exactly once per session */
+	if(data->ctr_initialized == false) {
+		const uint_fast16_t ivlen = ctx->keylen - (ctx->mode_params.ctr_info.ctr_len >> 3);
+
+		/* Tinycrypt takes the last 4 bytes of the counter parameter as the
+		 * true counter start. IV forms the first 12 bytes of the split counter.
+		 */
+		memcpy(ctr, ctx->mode_params.ctr_info.iv, ivlen);
+		memset(ctr + ivlen, 0, 16 - ivlen);
+
+		data->ctr_initialized = true;
+	}
 
 	if (tc_ctr_mode(op->out_buf, op->out_buf_max, op->in_buf,
 			op->in_len, ctr,
@@ -221,8 +229,8 @@ static int get_unused_session(void)
 	int i;
 
 	for (i = 0; i < CRYPTO_MAX_SESSION; i++) {
-		if (tc_driver_state[i].in_use == 0) {
-			tc_driver_state[i].in_use = 1;
+		if (tc_driver_state[i].in_use == false) {
+			tc_driver_state[i].in_use = true;
 			break;
 		}
 	}
@@ -291,6 +299,10 @@ static int tc_session_setup(const struct device *dev, struct cipher_ctx *ctx,
 			ctx->ops.cbc_crypt_hndlr = do_cbc_decrypt;
 			break;
 		case CRYPTO_CIPHER_MODE_CTR:
+			if (ctx->mode_params.ctr_info.iv == NULL) {
+				LOG_ERR("Missing initialization vector");
+				return -EINVAL;
+			}
 			/* Maybe validate CTR length */
 			if (ctx->mode_params.ctr_info.ctr_len != 32U) {
 				LOG_ERR("Tinycrypt supports only 32 bit "
@@ -323,7 +335,7 @@ static int tc_session_setup(const struct device *dev, struct cipher_ctx *ctx,
 	if (tc_aes128_set_encrypt_key(&data->session_key, ctx->key.bit_stream)
 			 == TC_CRYPTO_FAIL) {
 		LOG_ERR("TC internal error in setting key");
-		tc_driver_state[idx].in_use = 0;
+		tc_driver_state[idx].in_use = false;
 
 		return -EIO;
 	}
@@ -344,7 +356,8 @@ static int tc_session_free(const struct device *dev, struct cipher_ctx *sessn)
 
 	ARG_UNUSED(dev);
 	(void)memset(data, 0, sizeof(struct tc_shim_drv_state));
-	data->in_use = 0;
+	data->in_use = false;
+	data->ctr_initialized = false;
 
 	return 0;
 }
@@ -355,7 +368,7 @@ static int tc_shim_init(const struct device *dev)
 
 	ARG_UNUSED(dev);
 	for (i = 0; i < CRYPTO_MAX_SESSION; i++) {
-		tc_driver_state[i].in_use = 0;
+		tc_driver_state[i].in_use = false;
 	}
 
 	return 0;
