@@ -1,5 +1,5 @@
 #define LOG_MODULE_NAME net_lwm2m_engine_auto_send
-#define LOG_LEVEL	CONFIG_LWM2M_LOG_LEVEL
+#define LOG_LEVEL       CONFIG_LWM2M_LOG_LEVEL
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
@@ -20,7 +20,6 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #define SEND_RESPONSE_TIMEOUT  CONFIG_LWM2M_ENGINE_AUTO_SEND_RESPONSE_TIMEOUT
 #define MAX_MODIFIED_RESOURCE  CONFIG_LWM2M_ENGINE_AUTO_SEND_MODIFIED_RESOURCES_MAX
 #define MAX_STATIC_SEND_HINTS  CONFIG_LWM2M_ENGINE_AUTO_SEND_STATIC_PATH_HINTS_MAX
-#define MAX_IGNORED_PATHS      CONFIG_LWM2M_ENGINE_AUTO_SEND_IGNORED_PATHS_MAX
 #define MAX_SEND_PATHS_OVERALL (MAX_MODIFIED_RESOURCE + MAX_STATIC_SEND_HINTS)
 
 #ifdef CONFIG_LWM2M_LOG_LEVEL_DBG
@@ -47,9 +46,6 @@ static bool ignore_max_frequency_for_next_check = false;
 
 static int static_send_hints_count = 0;
 static struct lwm2m_obj_path static_send_hints[MAX_STATIC_SEND_HINTS] = {};
-
-static int ignored_paths_count = 0;
-static struct lwm2m_obj_path ignored_paths[MAX_IGNORED_PATHS] = {};
 
 static struct lwm2m_obj_path_list next_lwm2m_send_path_list_buf[MAX_SEND_PATHS_OVERALL];
 static struct lwm2m_obj_path_list *entry, *tmp;
@@ -92,8 +88,7 @@ static void for_each_res_inst(const struct lwm2m_engine_obj_inst *obj_inst,
 }
 
 static bool unmark_resources_cb(const struct lwm2m_engine_res *obj_res,
-					   struct lwm2m_engine_res_inst *obj_res_inst,
-					   void *callback_data)
+				struct lwm2m_engine_res_inst *obj_res_inst, void *callback_data)
 {
 	obj_res_inst->dirty = false;
 	obj_res_inst->sending = false;
@@ -101,16 +96,16 @@ static bool unmark_resources_cb(const struct lwm2m_engine_res *obj_res,
 }
 
 static bool mark_resources_as_dirty_cb(const struct lwm2m_engine_res *obj_res,
-					   struct lwm2m_engine_res_inst *obj_res_inst,
-					   void *callback_data)
+				       struct lwm2m_engine_res_inst *obj_res_inst,
+				       void *callback_data)
 {
 	obj_res_inst->dirty = true;
 	return false;
 }
 
 static bool mark_resources_as_sending_cb(const struct lwm2m_engine_res *obj_res,
-					     struct lwm2m_engine_res_inst *obj_res_inst,
-					     void *callback_data)
+					 struct lwm2m_engine_res_inst *obj_res_inst,
+					 void *callback_data)
 {
 	obj_res_inst->sending = true;
 	obj_res_inst->dirty = false;
@@ -129,8 +124,8 @@ static bool mark_sending_resources_as_dirty_cb(const struct lwm2m_engine_res *ob
 }
 
 static bool mark_resources_as_sent_cb(const struct lwm2m_engine_res *obj_res,
-					      struct lwm2m_engine_res_inst *obj_res_inst,
-					      void *callback_data)
+				      struct lwm2m_engine_res_inst *obj_res_inst,
+				      void *callback_data)
 {
 	if (obj_res_inst->sending) {
 		obj_res_inst->sending = false;
@@ -143,13 +138,24 @@ struct find_obj_inst_resource_changes_ctx {
 	bool has_unmodified;
 };
 
+static bool mark_resources_as_ignored_cb(const struct lwm2m_engine_res *obj_res,
+					 struct lwm2m_engine_res_inst *obj_res_inst,
+					 void *callback_data)
+{
+	struct find_obj_inst_resource_changes_ctx *ctx = callback_data;
+	ctx->modified_count++;
+
+	obj_res_inst->ignore = true;
+	return false;
+}
+
 static bool find_obj_inst_resource_changes_cb(const struct lwm2m_engine_res *obj_res,
 					      struct lwm2m_engine_res_inst *obj_res_inst,
 					      void *callback_data)
 {
 	struct find_obj_inst_resource_changes_ctx *ctx = callback_data;
 
-	if (obj_res_inst->dirty) {
+	if (obj_res_inst->dirty && !obj_res_inst->ignore) {
 		ctx->modified_count++;
 	} else {
 		ctx->has_unmodified = true;
@@ -269,7 +275,7 @@ static bool add_modified_path_for_resource_changes_cb(const struct lwm2m_engine_
 	struct add_modified_path_for_resource_changes_ctx *ctx =
 		(struct add_modified_path_for_resource_changes_ctx *)callback_data;
 
-	if (obj_res_inst->dirty) {
+	if (obj_res_inst->dirty && !obj_res_inst->ignore) {
 		if (obj_res->multi_res_inst) {
 			add_modified_path_res_inst(ctx->obj_inst->obj->obj_id,
 						   ctx->obj_inst->obj_inst_id, obj_res->res_id,
@@ -280,8 +286,8 @@ static bool add_modified_path_for_resource_changes_cb(const struct lwm2m_engine_
 					      ctx->obj_inst->obj_inst_id, obj_res->res_id,
 					      ctx->modified_paths, ctx->modified_paths_count);
 		}
+		obj_res_inst->sending = true;
 	}
-	obj_res_inst->sending = true;
 	obj_res_inst->dirty = false;
 
 	// process all resources
@@ -292,10 +298,10 @@ static void add_modified_path_for_resource_changes(struct lwm2m_engine_obj_inst 
 						   struct lwm2m_obj_path *modified_paths,
 						   int *modified_paths_count)
 {
-	struct add_modified_path_for_resource_changes_ctx ctx = {
-		.obj_inst = obj_inst,
-		.modified_paths = modified_paths,
-		.modified_paths_count = modified_paths_count};
+	struct add_modified_path_for_resource_changes_ctx ctx = {.obj_inst = obj_inst,
+								 .modified_paths = modified_paths,
+								 .modified_paths_count =
+									 modified_paths_count};
 
 	for_each_res_inst(obj_inst, add_modified_path_for_resource_changes_cb, (void *)&ctx);
 }
@@ -323,20 +329,90 @@ int lwm2m_engine_auto_send_add_static_path_hint(const struct lwm2m_obj_path *pat
 	return 0;
 }
 
-int lwm2m_engine_auto_send_ignore_path(const struct lwm2m_obj_path *path)
+static int get_obj_from_path(const struct lwm2m_obj_path *path, struct lwm2m_engine_obj **obj,
+			     struct lwm2m_engine_obj_inst **obj_inst, struct lwm2m_engine_res **res)
 {
-	if (ignored_paths_count >= MAX_IGNORED_PATHS) {
-		return -ENOMEM;
+	switch (path->level) {
+	case LWM2M_PATH_LEVEL_OBJECT:
+		*obj = get_engine_obj(path->obj_id);
+		if (*obj == NULL) {
+			return -EINVAL;
+		}
+		return 0;
+	case LWM2M_PATH_LEVEL_OBJECT_INST:
+		*obj_inst = get_engine_obj_inst(path->obj_id, path->obj_inst_id);
+		if (*obj_inst == NULL) {
+			return -EINVAL;
+		}
+		return 0;
+	case LWM2M_PATH_LEVEL_RESOURCE:
+	case LWM2M_PATH_LEVEL_RESOURCE_INST: {
+		struct lwm2m_engine_obj_field *obj_field;
+		struct lwm2m_engine_res_inst *res_inst = NULL;
+		int ret = path_to_objs(path, obj_inst, &obj_field, res, &res_inst);
+		if (ret < 0) {
+			return ret;
+		}
+		return 0;
 	}
-
-	if (path->level == LWM2M_PATH_LEVEL_NONE) {
-		LOG_ERR("Path must have level");
+	case LWM2M_PATH_LEVEL_NONE:
+	default:
 		return -EINVAL;
 	}
+}
 
-	memcpy(&ignored_paths[ignored_paths_count], path, sizeof(struct lwm2m_obj_path));
-	ignored_paths_count++;
+int lwm2m_engine_auto_send_ignore_path(const struct lwm2m_obj_path *path)
+{
+	struct lwm2m_engine_obj *obj = NULL;
+	struct lwm2m_engine_obj_inst *obj_inst = NULL;
+	struct lwm2m_engine_res *res = NULL;
+	struct find_obj_inst_resource_changes_ctx ctx = {.modified_count = 0,
+							 .has_unmodified = false};
+	if (get_obj_from_path(path, &obj, &obj_inst, &res) == 0) {
+		lwm2m_registry_lock();
 
+		switch (path->level) {
+		case LWM2M_PATH_LEVEL_OBJECT:
+			for (int i = 0; i < obj->instance_count; ++i) {
+				SYS_SLIST_FOR_EACH_CONTAINER(lwm2m_engine_obj_inst_list(), obj_inst,
+							     node) {
+					if (obj_inst->obj->obj_id == path->obj_id) {
+						for_each_res_inst(obj_inst,
+								  mark_resources_as_ignored_cb,
+								  &ctx);
+					}
+				}
+			}
+			break;
+		case LWM2M_PATH_LEVEL_OBJECT_INST:
+			for_each_res_inst(obj_inst, mark_resources_as_ignored_cb, &ctx);
+			break;
+		case LWM2M_PATH_LEVEL_RESOURCE:
+			for (int i = 0; i < res->res_inst_count; ++i) {
+				res->res_instances[i].ignore = true;
+				ctx.modified_count++;
+			}
+			break;
+		case LWM2M_PATH_LEVEL_RESOURCE_INST:
+			if (path->res_inst_id < res->res_inst_count) {
+				res->res_instances[path->res_inst_id].ignore = true;
+				ctx.modified_count++;
+			}
+			break;
+		case LWM2M_PATH_LEVEL_NONE:
+		default:
+			break;
+		}
+
+		lwm2m_registry_unlock();
+	}
+
+	if (ctx.modified_count == 0) {
+		char log_path_str_buf[LWM2M_MAX_PATH_STR_SIZE];
+		LOG_ERR("Path to ignore is invalid or not found: %s",
+			lwm2m_path_log_buf(log_path_str_buf, (struct lwm2m_obj_path *)path));
+		return -ENXIO;
+	}
 	return 0;
 }
 
@@ -478,64 +554,22 @@ int lwm2m_engine_auto_send_send_obj_inst(const struct lwm2m_obj_path *path)
 	return 0;
 }
 
-bool is_ignored_path(struct lwm2m_obj_path *path)
-{
-	bool is_ignored = false;
-	struct lwm2m_obj_path *ignored_path;
-
-	for (int i = 0; i < ignored_paths_count; i++) {
-		ignored_path = &ignored_paths[i];
-		if (ignored_path->level > path->level) {
-			continue;
-		}
-
-		switch (ignored_path->level) {
-		case LWM2M_PATH_LEVEL_OBJECT:
-			is_ignored = ignored_path->obj_id == path->obj_id;
-			break;
-
-		case LWM2M_PATH_LEVEL_OBJECT_INST:
-			is_ignored = ignored_path->obj_id == path->obj_id &&
-				     ignored_path->obj_inst_id == path->obj_inst_id;
-			break;
-
-		case LWM2M_PATH_LEVEL_RESOURCE:
-			is_ignored = ignored_path->obj_id == path->obj_id &&
-				     ignored_path->obj_inst_id == path->obj_inst_id &&
-				     ignored_path->res_id == path->res_id;
-			break;
-		case LWM2M_PATH_LEVEL_RESOURCE_INST:
-			is_ignored = ignored_path->obj_id == path->obj_id &&
-				     ignored_path->obj_inst_id == path->obj_inst_id &&
-				     ignored_path->res_id == path->res_id &&
-				     ignored_path->res_inst_id == path->res_inst_id;
-			break;
-		}
-		if (is_ignored) {
-			return true;
-		}
-	}
-
-	return false;
-}
-
 static void send_reply_cb(enum lwm2m_send_status status)
 {
-#define STRING "Response %s after %llims"
 	time_t duration = k_uptime_get() - last_sent_time;
 	last_sent_time = -1;
 
 	switch (status) {
 	case LWM2M_SEND_STATUS_SUCCESS:
-		LOG_INF(STRING, "SUCCESS", duration);
+		LOG_INF("Response SUCCESS after %" PRIi64 "ms", (int64_t)duration);
 		mark_resources_as_send_pass();
 		break;
 	case LWM2M_SEND_STATUS_FAILURE:
-		LOG_ERR(STRING, "FAILURE", duration);
+		LOG_ERR("Response FAILURE after %" PRIi64 "ms", (int64_t)duration);
 		mark_resources_as_send_fail();
 		break;
 	case LWM2M_SEND_STATUS_TIMEOUT:
-		LOG_ERR(STRING, "TIMEOUT", duration);
+		LOG_ERR("Response TIMEOUT after %" PRIi64 "ms", (int64_t)duration);
 		mark_resources_as_send_fail();
 		break;
 	}
@@ -559,8 +593,8 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 		if (k_uptime_get() - last_sent_time < SEND_RESPONSE_TIMEOUT) {
 			return;
 		}
-		LOG_ERR("Auto send still waiting for response - abort after %llims",
-			k_uptime_get() - last_sent_time);
+		LOG_ERR("Auto send still waiting for response - abort after %" PRIi64 "ms",
+			(int64_t)(k_uptime_get() - last_sent_time));
 		mark_resources_as_send_fail();
 		last_sent_time = -1;
 	}
@@ -580,7 +614,7 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 
 	lwm2m_registry_lock();
 
-	SYS_SLIST_FOR_EACH_CONTAINER (lwm2m_engine_obj_inst_list(), obj_inst, node) {
+	SYS_SLIST_FOR_EACH_CONTAINER(lwm2m_engine_obj_inst_list(), obj_inst, node) {
 		if (!obj_inst->resources || obj_inst->resource_count == 0U) {
 			continue;
 		}
@@ -639,7 +673,7 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 		}
 	}
 
-	SYS_SLIST_FOR_EACH_CONTAINER (&partial_update_list, obj_inst_ref, node) {
+	SYS_SLIST_FOR_EACH_CONTAINER(&partial_update_list, obj_inst_ref, node) {
 		obj_inst = obj_inst_ref->obj_inst;
 
 		add_modified_path_for_resource_changes(obj_inst, modified_paths,
@@ -685,45 +719,33 @@ void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, const int64_t timestamp)
 #ifdef LWM2M_AUTO_SEND_DEBUG
 		LOG_DBG("Before duplicate path removal:");
 
-		SYS_SLIST_FOR_EACH_CONTAINER_SAFE (&next_lwm2m_send_path_list, entry, tmp, node) {
+		SYS_SLIST_FOR_EACH_CONTAINER_SAFE(&next_lwm2m_send_path_list, entry, tmp, node) {
 			LOG_DBG("- %s", lwm2m_path_log_buf(log_path_str_buf, &entry->path));
 		}
 #endif
 		lwm2m_engine_clear_duplicate_path(&next_lwm2m_send_path_list,
 						  &next_lwm2m_send_path_free_list);
-#ifdef LWM2M_AUTO_SEND_DEBUG
-		LOG_DBG("After duplicate path removal:");
-		SYS_SLIST_FOR_EACH_CONTAINER_SAFE (&next_lwm2m_send_path_list, entry, tmp, node) {
-			LOG_DBG("- %s", lwm2m_path_log_buf(log_path_str_buf, &entry->path));
-		}
-#endif
 
 		int send_path_count = 0;
 #ifdef LWM2M_AUTO_SEND_DEBUG
 		LOG_DBG("Final sending paths:");
 #endif
-		SYS_SLIST_FOR_EACH_CONTAINER_SAFE (&next_lwm2m_send_path_list, entry, tmp, node) {
+		SYS_SLIST_FOR_EACH_CONTAINER_SAFE(&next_lwm2m_send_path_list, entry, tmp, node) {
 
-			if (!is_ignored_path(&entry->path)) {
-				memcpy(&next_lwm2m_send_paths[send_path_count], &entry->path, sizeof(entry->path));
+			memcpy(&next_lwm2m_send_paths[send_path_count], &entry->path,
+			       sizeof(entry->path));
 #ifdef LWM2M_AUTO_SEND_DEBUG
-				LOG_DBG("- %s",
-					lwm2m_path_log_buf(log_path_str_buf, &entry->path));
+			LOG_DBG("- %s", lwm2m_path_log_buf(log_path_str_buf, &entry->path));
 #endif
-				send_path_count++;
-			} else {
-#ifdef LWM2M_AUTO_SEND_DEBUG
-				LOG_DBG("- ignored %s",
-					lwm2m_path_log_buf(log_path_str_buf, &entry->path));
-#endif
-			}
+			send_path_count++;
 		}
 
 		if (send_path_count > 0) {
 			rc = lwm2m_send_cb(ctx, next_lwm2m_send_paths, send_path_count,
 					   send_reply_cb);
 			if (rc < 0) {
-				LOG_ERR("Automatic lwm2m send failed");
+				LOG_ERR("Automatic lwm2m send failed "
+					"- retry on next send with reduced amount of paths");
 				mark_resources_as_send_fail();
 				auto_send_recover = true;
 				goto cleanup;
@@ -741,12 +763,12 @@ cleanup:
 	lwm2m_registry_unlock();
 }
 
-void lwm2m_engine_auto_send_all_objs( void )
+void lwm2m_engine_auto_send_all_objs(void)
 {
 	struct lwm2m_engine_obj_inst *obj_inst;
 
 	lwm2m_registry_lock();
-	SYS_SLIST_FOR_EACH_CONTAINER (lwm2m_engine_obj_inst_list(), obj_inst, node) {
+	SYS_SLIST_FOR_EACH_CONTAINER(lwm2m_engine_obj_inst_list(), obj_inst, node) {
 		if (!obj_inst->resources || obj_inst->resource_count == 0U) {
 			continue;
 		}

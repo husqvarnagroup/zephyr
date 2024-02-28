@@ -395,6 +395,7 @@ struct lwm2m_engine_res_inst {
 	uint8_t dirty: 1;
 	uint8_t force: 1;
 	uint8_t sending: 1;
+	uint8_t ignore: 1;
 	uint8_t report_after_write: 1;
 #endif
 };
@@ -439,6 +440,7 @@ static inline void init_res_instance(struct lwm2m_engine_res_inst *ri,
 		ri[i].dirty = false;
 		ri[i].force = IS_ENABLED(CONFIG_LWM2M_ENGINE_AUTO_SEND_FORCE_SEND);
 		ri[i].sending = false;
+		ri[i].ignore = false;
 		ri[i].report_after_write = true;
 #endif
 	}

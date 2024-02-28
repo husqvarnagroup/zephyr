@@ -615,12 +615,6 @@ config LWM2M_ENGINE_AUTO_SEND_STATIC_PATH_HINTS_MAX
 	help
 	  Max number of path hints that can be configured for auto send.
 
-config LWM2M_ENGINE_AUTO_SEND_IGNORED_PATHS_MAX
-	int "Maximum # of ignored paths"
-        default 10
-	help
-	  Max number of ignored paths that can be configured for auto send.
-
 config LWM2M_ENGINE_AUTO_SEND_CHECK_FREQUENCY_MAX
 	int "Minimum milliseconds between auto send resource modification checks."
 	default 0
