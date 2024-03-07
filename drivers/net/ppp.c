@@ -39,6 +39,17 @@ LOG_MODULE_REGISTER(net_ppp, LOG_LEVEL);
 #define UART_BUF_LEN CONFIG_NET_PPP_UART_BUF_LEN
 #define UART_TX_BUF_LEN CONFIG_NET_PPP_ASYNC_UART_TX_BUF_LEN
 
+/* yield control every N bytes so that higher-priority threads can run
+ * (note: N=28 should be about 2 ms at 115200 bps)
+ */
+#define UART_YIELD_INTERVAL_BYTES 28
+
+#if DT_NODE_HAS_PROP(DT_CHOSEN(zephyr_ppp_uart), current_speed)
+BUILD_ASSERT(UART_YIELD_INTERVAL_BYTES * 8 * 1000 /
+			     DT_PROP(DT_CHOSEN(zephyr_ppp_uart), current_speed) <= 5,
+	     "current UART k_yield() interval & speed leads to blocking time > 5 ms");
+#endif
+
 enum ppp_driver_state {
 	STATE_HDLC_FRAME_START,
 	STATE_HDLC_FRAME_ADDRESS,
@@ -403,6 +414,12 @@ static int ppp_send_flush(struct ppp_driver_context *ppp, int off)
 	} else {
 		while (off--) {
 			uart_poll_out(ppp->dev, *buf++);
+			static uint8_t counter = 0;
+			counter++;
+			if (counter % UART_YIELD_INTERVAL_BYTES == 0) {
+				counter = 0;
+				k_yield();
+			}
 		}
 	}
 
