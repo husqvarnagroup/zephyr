@@ -17,10 +17,6 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include "lwm2m_object.h"
 #include "lwm2m_engine.h"
 
-#ifdef CONFIG_LWM2M_ENGINE_AUTO_SEND
-#include "lwm2m_auto_send.h"
-#endif
-
 #define SECURITY_VERSION_MAJOR 1
 #if defined(CONFIG_LWM2M_SECURITY_OBJECT_VERSION_1_1)
 #define SECURITY_VERSION_MINOR 1
@@ -151,6 +147,12 @@ static struct lwm2m_engine_obj_inst *security_create(uint16_t obj_inst_id)
 		     sizeof(res[index][0]) * ARRAY_SIZE(res[index]));
 	init_res_instance(res_inst[index], ARRAY_SIZE(res_inst[index]));
 
+#if defined(CONFIG_LWM2M_RESOURCE_DATA_MODIFICATION_TRACKING)
+	for (int j = 0; j < ARRAY_SIZE(res_inst[index]); j++) {
+		res_inst[index][j].ignore = true;
+	}
+#endif
+
 	/* initialize instance resource data */
 	INIT_OBJ_RES_DATA_LEN(SECURITY_SERVER_URI_ID, res[index], i,
 			  res_inst[index], j,
@@ -236,11 +238,6 @@ static int lwm2m_security_init(void)
 	if (ret < 0) {
 		LOG_ERR("Create LWM2M security instance 0 error: %d", ret);
 	}
-
-	#ifdef CONFIG_LWM2M_ENGINE_AUTO_SEND
-	lwm2m_engine_auto_send_ignore_path( &LWM2M_OBJ( LWM2M_OBJECT_SECURITY_ID ) );
-	#endif
-
 	return ret;
 }
 

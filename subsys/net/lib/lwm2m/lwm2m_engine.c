@@ -724,7 +724,7 @@ static void socket_loop(void)
 			    lwm2m_rd_client_is_registred(sock_ctx[i])) {
 				check_notifications(sock_ctx[i], timestamp);
 #ifdef CONFIG_LWM2M_ENGINE_AUTO_SEND
-				check_automatic_lwm2m_sends(sock_ctx[i], timestamp);
+				lwm2m_enginge_auto_send_run(sock_ctx[i], timestamp);
 #endif
 			}
 		}

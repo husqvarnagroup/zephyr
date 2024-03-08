@@ -30,6 +30,11 @@ int lwm2m_engine_auto_send_add_static_path_hint(const struct lwm2m_obj_path *pat
 int lwm2m_engine_auto_send_send_obj_inst(const struct lwm2m_obj_path *path);
 
 /**
+ * @brief Set all objs dirty to be resent
+ */
+void lwm2m_engine_auto_send_send_all_objs(void);
+
+/**
  * @brief Add a path to be ignored for auto send.
  *
  * Modification of resources at (or below) the provided path will never trigger an
@@ -49,11 +54,12 @@ int lwm2m_engine_auto_send_ignore_path(const struct lwm2m_obj_path *path);
  */
 void lwm2m_engine_auto_send_set(bool enable);
 
-void check_automatic_lwm2m_sends(struct lwm2m_ctx *ctx, int64_t timestamp);
-
 /**
- * @brief Set all objs dirty to be resent
+ * @brief Run auto send which checks all objects and sends changed resources
+ *
+ * @param ctx       lwm2m context
+ * @param timestamp current timestamp
  */
-void lwm2m_engine_auto_send_all_objs( void );
+void lwm2m_enginge_auto_send_run(struct lwm2m_ctx *ctx, int64_t timestamp);
 
 #endif /* LWM2M_AUTO_SEND_H */
