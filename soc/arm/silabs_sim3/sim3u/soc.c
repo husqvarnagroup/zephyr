@@ -120,11 +120,6 @@ static int silabs_sim3u_init(void)
 	gpio_init();
 	vmon_init();
 
-	/* Install default handler that simply resets the CPU
-	 * if configured in the kernel, NOP otherwise
-	 */
-	NMI_INIT();
-
 	irq_unlock(key);
 
 	return 0;
