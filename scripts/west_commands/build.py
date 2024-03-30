@@ -122,9 +122,9 @@ class Build(Forceable):
                            help='''run build system target TARGET
                            (try "-t usage")''')
         group.add_argument('-T', '--test-item',
-                           help='''Build based on test data in testcase.yaml
-                           or sample.yaml. If source directory is not used
-                           an argument has to be defined as
+                           help='''Build based on test data in testcase.yaml,
+                           sample.yaml or twister.yaml. If source directory is
+                           not used an argument has to be defined as
                            SOURCE_PATH/TEST_NAME.
                            E.g. samples/hello_world/sample.basic.helloworld.
                            If source directory is passed
@@ -166,7 +166,8 @@ class Build(Forceable):
         # Store legacy -s option locally
         source_dir = self.args.source_dir
         self._parse_remainder(remainder)
-        # Parse testcase.yaml or sample.yaml files for additional options.
+        # Parse testcase.yaml, sample.yaml or twister.yaml files for additional
+        # options.
         if self.args.test_item:
             # we get path + testitem
             item = os.path.basename(self.args.test_item)
@@ -271,7 +272,7 @@ class Build(Forceable):
 
     def _parse_test_item(self, test_item):
         found_test_metadata = False
-        for yp in ['sample.yaml', 'testcase.yaml']:
+        for yp in ['sample.yaml', 'testcase.yaml', 'twister.yaml']:
             yf = os.path.join(self.args.source_dir, yp)
             if not os.path.exists(yf):
                 continue

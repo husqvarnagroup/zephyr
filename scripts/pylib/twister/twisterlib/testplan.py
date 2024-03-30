@@ -90,6 +90,7 @@ class TestPlan:
     tc_schema_path = os.path.join(ZEPHYR_BASE, "scripts", "schemas", "twister", "test-config-schema.yaml")
 
     SAMPLE_FILENAME = 'sample.yaml'
+    TWISTER_FILENAME = 'twister.yaml'
     TESTSUITE_FILENAME = 'testcase.yaml'
 
     def __init__(self, env=None):
@@ -490,6 +491,8 @@ class TestPlan:
             for dirpath, _, filenames in os.walk(root, topdown=True):
                 if self.SAMPLE_FILENAME in filenames:
                     filename = self.SAMPLE_FILENAME
+                elif self.TWISTER_FILENAME in filenames:
+                    filename = self.TWISTER_FILENAME
                 elif self.TESTSUITE_FILENAME in filenames:
                     filename = self.TESTSUITE_FILENAME
                 else:

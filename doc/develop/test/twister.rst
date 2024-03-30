@@ -214,7 +214,8 @@ env:
 Test Cases
 **********
 
-Test cases are detected by the presence of a ``testcase.yaml`` or a ``sample.yaml``
+Test cases are detected by the presence of a ``testcase.yaml``, ``sample.yaml``
+or a ``twister.yaml``
 files in the application's project directory. This file may contain one or more
 entries in the test section each identifying a test scenario.
 
