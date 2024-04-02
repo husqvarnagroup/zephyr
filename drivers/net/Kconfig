@@ -48,6 +48,13 @@ config NET_PPP_RINGBUF_SIZE
 	  PPP ring buffer size when passing data from RX ISR to worker
 	  thread that will pass the data to IP stack.
 
+config NET_PPP_RINGBUF_MIN_SPACE
+	int "Minimum space in RX ring buffer before enabling flow-control"
+	default 50
+	help
+	  Minimum number of free bytes in RX ring buffer. If remaning space reaches this limit, UART
+	  flow-control is enabled.
+
 config NET_PPP_RX_STACK_SIZE
 	int "Size of the stack allocated for receiving data from modem"
 	default 768
