@@ -29,6 +29,7 @@ LOG_MODULE_REGISTER(net_ppp, LOG_LEVEL);
 #include <zephyr/net/net_core.h>
 #include <zephyr/sys/ring_buffer.h>
 #include <zephyr/sys/crc.h>
+#include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/drivers/console/uart_mux.h>
 #include <zephyr/random/random.h>
@@ -50,6 +51,8 @@ BUILD_ASSERT(UART_YIELD_INTERVAL_BYTES * 8 * 1000 /
 	     "current UART k_yield() interval & speed leads to blocking time > 5 ms");
 #endif
 
+#define RX_RINGBUF_MIN_SPACE CONFIG_NET_PPP_RINGBUF_MIN_SPACE
+
 enum ppp_driver_state {
 	STATE_HDLC_FRAME_START,
 	STATE_HDLC_FRAME_ADDRESS,
@@ -58,6 +61,33 @@ enum ppp_driver_state {
 
 #define PPP_WORKQ_PRIORITY CONFIG_NET_PPP_RX_PRIORITY
 #define PPP_WORKQ_STACK_SIZE CONFIG_NET_PPP_RX_STACK_SIZE
+
+#define UART_RTS_NODE DT_ALIAS(ppp_uart_rts)
+
+/*
+ * Note regarding synchronization: this variable is written both from a thread and an interrupt,
+ * however since the interrupt only writes the variable when the ring buffer is (mostly) full and
+ * the thread only when the ring buffer is empty, there is no issue in reality (there might be an
+ * issue in case of the dongle, which uses USB CDC ACM instead of UART though).
+ */
+static bool uart_ready_for_data = true;
+
+static void flow_control_set_rts(const struct device *uart, const bool ready_for_data) {
+	if (uart_ready_for_data == ready_for_data) {
+		return;
+	}
+	uart_ready_for_data = ready_for_data;
+
+#ifdef CONFIG_UART_LINE_CTRL
+	uart_line_ctrl_set(uart, UART_LINE_CTRL_RTS, ready_for_data ? 1 : 0);
+#else /* CONFIG_UART_LINE_CTRL */
+	if (ready_for_data) {
+		uart_irq_rx_enable(uart);
+	} else {
+		uart_irq_rx_disable(uart);
+	}
+#endif /* CONFIG_UART_LINE_CTRL */
+}
 
 K_KERNEL_STACK_DEFINE(ppp_workq, PPP_WORKQ_STACK_SIZE);
 
@@ -888,6 +918,11 @@ static int ppp_consume_ringbuf(struct ppp_driver_context *ppp)
 		LOG_DBG("Cannot flush ring buffer (%d)", ret);
 	}
 
+	if (ring_buf_is_empty(&ppp->rx_ringbuf)) {
+		LOG_DBG("ringbuf empty, enabling UART");
+		flow_control_set_rts(ppp->dev, true);
+	}
+
 	return -EAGAIN;
 }
 
@@ -1027,6 +1062,11 @@ static void ppp_uart_isr(const struct device *uart, void *user_data)
 				"Bytes pending: %d, written: %d",
 				rx, ret);
 			break;
+		}
+
+		if (ring_buf_space_get(&context->rx_ringbuf) < RX_RINGBUF_MIN_SPACE) {
+			LOG_DBG("ringbuf almost full, disabling UART");
+			flow_control_set_rts(uart, false);
 		}
 
 		k_work_submit_to_queue(&context->cb_workq, &context->cb_work);
