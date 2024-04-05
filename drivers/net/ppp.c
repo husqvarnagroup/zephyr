@@ -55,6 +55,10 @@ BUILD_ASSERT(UART_YIELD_INTERVAL_BYTES * 8 * 1000 /
 
 #define RX_RINGBUF_MIN_SPACE CONFIG_NET_PPP_RINGBUF_MIN_SPACE
 
+/* delay after successfully receiving a packet via PPP (to give lb_radio time to send it) */
+#define NET_RECV_DELAY_FIXED_MS    CONFIG_NET_PPP_RX_DELAY_FIXED_MS
+#define NET_RECV_DELAY_PER_BYTE_US CONFIG_NET_PPP_RX_DELAY_PER_BYTE_US
+
 enum ppp_driver_state {
 	STATE_HDLC_FRAME_START,
 	STATE_HDLC_FRAME_ADDRESS,
@@ -721,8 +725,17 @@ static void ppp_process_msg(struct ppp_driver_context *ppp)
 			net_pkt_cursor_init(ppp->pkt);
 			net_pkt_set_overwrite(ppp->pkt, true);
 
+			size_t size = net_pkt_get_len(ppp->pkt);
+			uint32_t delay_ms =
+				NET_RECV_DELAY_FIXED_MS + size * NET_RECV_DELAY_PER_BYTE_US / 1000;
 			if (net_recv_data(ppp->iface, ppp->pkt) < 0) {
 				net_pkt_unref(ppp->pkt);
+			} else {
+				if (delay_ms > 0) {
+					LOG_DBG("PPP received pkt (%d bytes); sleeping for %d ms",
+						size, delay_ms);
+					k_msleep(delay_ms);
+				}
 			}
 		}
 	}
