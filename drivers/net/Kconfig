@@ -67,6 +67,20 @@ config NET_PPP_RX_PRIORITY
 	help
 	  Sets the priority of the RX workqueue thread.
 
+config NET_PPP_RX_DELAY_FIXED_MS
+	int "Fixed PPP RX thread delay in ms"
+	default 100
+	help
+	  Fixed delay before reading next byte in PPP RX thread after sucessfully receiving a
+	  packet.
+
+config NET_PPP_RX_DELAY_PER_BYTE_US
+	int "Per-byte PPP RX thread delay in μs"
+	default 400
+	help
+	  Per-byte delay before reading next byte in PPP RX thread after sucessfully receiving a
+	  packet.
+
 config NET_PPP_VERIFY_FCS
 	bool "Verify that received FCS is valid"
 	default y
