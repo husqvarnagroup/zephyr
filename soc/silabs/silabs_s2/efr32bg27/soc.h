@@ -12,7 +12,7 @@
 
 #ifndef _ASMLANGUAGE
 #include <em_common.h>
-#include "../common/soc_gpio.h"
+#include "../common_gecko/soc_gpio.h"
 #endif /* _ASMLANGUAGE */
 
 #endif /* EFR32BG27_SOC_H_ */
