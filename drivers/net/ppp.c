@@ -44,9 +44,11 @@ LOG_MODULE_REGISTER(net_ppp, LOG_LEVEL);
  */
 #define UART_YIELD_INTERVAL_BYTES 28
 
+#if DT_NODE_HAS_PROP(DT_CHOSEN(zephyr_ppp_uart), current_speed)
 BUILD_ASSERT(UART_YIELD_INTERVAL_BYTES * 8 * 1000 /
 			     DT_PROP(DT_CHOSEN(zephyr_ppp_uart), current_speed) <= 5,
 	     "current UART k_yield() interval & speed leads to blocking time > 5 ms");
+#endif
 
 enum ppp_driver_state {
 	STATE_HDLC_FRAME_START,
