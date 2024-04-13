@@ -3,6 +3,6 @@
 
 config SOC_FAMILY_SILABS_S2
 	bool
-	select SOC_VENDOR_SILABS
+	select SOC_GECKO
 
 rsource "*/Kconfig.soc"
