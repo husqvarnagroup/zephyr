@@ -146,6 +146,17 @@
 			#dma-cells = <3>;
 			status = "disabled";
 		};
+
+		crypto: crypto@40027000 {
+			compatible = "silabs,si32-aes";
+			reg = <0x40027000 0x1000>;
+			status = "disabled";
+			interrupts = <42 0>;
+			dmas = <&dma 5 0 0>,
+			       <&dma 6 0 0>,
+			       <&dma 7 0 0>;
+			dma-names = "tx", "rx", "xor";
+		};
 	};
 };
 
