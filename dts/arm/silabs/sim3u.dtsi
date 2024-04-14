@@ -134,6 +134,12 @@
 			#gpio-cells = <2>;
 			reg = <0x4002a3c0 0xa0>;
 		};
+
+		crypto: crypto@40027000 {
+			compatible = "silabs,si32-aes";
+			reg = <0x40027000 0x1000>;
+			status = "disabled";
+		};
 	};
 };
 
