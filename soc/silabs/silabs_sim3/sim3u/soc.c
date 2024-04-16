@@ -17,8 +17,34 @@
 #include <si32_device.h>
 #include <silabs_crossbar_config.h>
 
+/* Why is there (seemingly) no existing header for this? */
+struct ETMCR {
+	volatile unsigned int etm_power_down: 1;
+	volatile unsigned int _reserved_0: 3;
+	volatile unsigned int port_size: 3;
+	volatile unsigned int stall_processor: 1;
+	volatile unsigned int branch_output: 1;
+	volatile unsigned int debug_request_control: 1;
+	volatile unsigned int etm_programming: 1;
+	volatile unsigned int etm_port_selection: 1;
+	volatile unsigned int _reserved_1: 1;
+	volatile unsigned int port_mode_2: 1; /* These bits are implemented but have no function. */
+	volatile unsigned int _reserved_2: 2;
+	volatile unsigned int port_mode_1_0: 2; /* These bits are implemented but have no function. */
+	volatile unsigned int _reserved_3: 2;
+	volatile unsigned int _port_size_3: 1; /* This bit is implemented but has no function. */
+	volatile unsigned int _reserved_4: 9;  /* RAZ */
+} __packed;
+
+
+#define ARM_ETMCR ((struct ETMCR*)_PPB_EXT_ETM)
+
+BUILD_ASSERT(sizeof(struct ETMCR) == 4, "ETMCR has a size of 32 bits");
+
 static void gpio_init(void)
 {
+	volatile struct ETMCR *etmcr = ARM_ETMCR;
+
 	/* After a device reset, all crossbars enter a disabled default reset state, causing all
 	 * port bank pins into a high impedance digital input mode.
 	 */
@@ -26,6 +52,11 @@ static void gpio_init(void)
 	/* Enable clocks that we need in any case */
 	SI32_CLKCTRL_A_enable_apb_to_modules_0(
 		SI32_CLKCTRL_0, SI32_CLKCTRL_A_APBCLKG0_PB0 | SI32_CLKCTRL_A_APBCLKG0_FLASHCTRL0);
+
+	etmcr->etm_power_down = 0;
+	etmcr->etm_programming = 0;
+	etmcr->etm_port_selection = 1;
+	SI32_PBCFG_A_enable_etm(SI32_PBCFG_0);
 
 	/* Enable misc clocks.
 	 * We may or may nor need all of that but it includes some basics like
