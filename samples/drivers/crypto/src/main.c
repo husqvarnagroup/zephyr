@@ -12,6 +12,7 @@
 #include <zephyr/kernel.h>
 #include <string.h>
 #include <zephyr/crypto/crypto.h>
+#include <zephyr/timing/timing.h>
 
 #define LOG_LEVEL CONFIG_CRYPTO_LOG_LEVEL
 #include <zephyr/logging/log.h>
@@ -622,6 +623,9 @@ int main(void)
 		return 0;
 	}
 #endif
+	timing_t start_time, end_time;
+	uint64_t total_cycles;
+	uint64_t total_ns;
 	const struct mode_test modes[] = {
 		{ .mode = "ECB Mode", .mode_func = ecb_mode },
 		{ .mode = "CBC Mode", .mode_func = cbc_mode },
@@ -632,6 +636,9 @@ int main(void)
 	};
 	int i;
 
+	timing_init();
+	timing_start();
+
 	if (validate_hw_compatibility(dev)) {
 		LOG_ERR("Incompatible h/w");
 		return 0;
@@ -641,7 +648,15 @@ int main(void)
 
 	for (i = 0; modes[i].mode; i++) {
 		LOG_INF("%s", modes[i].mode);
+		start_time = timing_counter_get();
 		modes[i].mode_func(dev);
+		end_time = timing_counter_get();
+
+		total_cycles = timing_cycles_get(&start_time, &end_time);
+		total_ns = timing_cycles_to_ns(total_cycles);
+		LOG_INF("%s Timing: %" PRIu64 " ns, %" PRIu64 " cylces", modes[i].mode, total_ns,
+			total_cycles);
 	}
+
 	return 0;
 }
