@@ -79,6 +79,7 @@ tests:
     tags: crypto
     filter: dt_compat_enabled("silabs,si32-aes")
     integration_platforms:
+      - sgrm
       - sim3u1xx_dk
     harness: console
     harness_config:
