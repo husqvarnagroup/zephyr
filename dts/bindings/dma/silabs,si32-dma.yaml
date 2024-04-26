@@ -1,0 +1,26 @@
+# Copyright (c) 2024 GARDENA GmbH
+# SPDX-License-Identifier: Apache-2.0
+
+description: SiM3x1xx DMA controller
+
+compatible: "silabs,si32-dma"
+
+include: dma-controller.yaml
+
+properties:
+  reg:
+    required: true
+
+  interrupts:
+    required: true
+
+  dma-channels:
+    required: true
+
+  "#dma-cells":
+    const: 3
+
+dma-cells:
+  - channel
+  - high-prio
+  - rpower
