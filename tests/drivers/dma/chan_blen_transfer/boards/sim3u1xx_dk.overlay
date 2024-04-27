@@ -6,5 +6,4 @@
 
 tst_dma0: &dma {
 	status = "okay";
-	dma-channels = <2>;
 };
