@@ -31,7 +31,7 @@ static void dma_si32_isr_handler(uint8_t channel)
 {
 	struct SI32_DMADESC_A_Struct *channel_descriptor = &channels[channel];
 
-	LOG_INF("Channel %" PRIu8 " ISR fired", channel);
+	LOG_DBG("Channel %" PRIu8 " ISR fired", channel);
 
 	if (SI32_DMACTRL_A_is_bus_error_set(SI32_DMACTRL_0)) {
 		LOG_ERR("Bus error on channel %" PRIu8, channel);
@@ -160,7 +160,6 @@ int dma_si32_start(const struct device *dev, uint32_t channel)
 		 "a. Set the SRCEND field to the last address of the source data.");
 	__ASSERT(channel_desc->DSTEND.U32,
 		 "b. Set the DSTEND field to the last address of the destination memory.");
-	LOG_INF("c->CONFIG.DSTAIMD: %d", channel_desc->CONFIG.DSTAIMD);
 	__ASSERT(channel_desc->CONFIG.DSTAIMD == 0 && channel_desc->CONFIG.SRCAIMD == 0,
 		 "c. Set the destination and source address increment modes (DSTAIMD and "
 		 "SRCAIMD). In most cases, these values should be the same");
@@ -187,12 +186,12 @@ int dma_si32_start(const struct device *dev, uint32_t channel)
 	irq_enable(DMACH0_IRQn + channel);
 
 	/* 10. Submit a request to start the transfer. */
-	LOG_INF("Generate SW request for channel %" PRIu32, channel);
+	LOG_DBG("Generate SW request for channel %" PRIu32, channel);
 	SI32_DMACTRL_A_generate_software_request(SI32_DMACTRL_0, channel);
 
 	/* Own stuff */
 	__ASSERT(!SI32_DMACTRL_A_is_bus_error_set(SI32_DMACTRL_0), "No error allowed");
-	LOG_INF("State machine state: %d", SI32_DMACTRL_0->STATUS.STATE);
+	LOG_DBG("State machine state: %d", SI32_DMACTRL_0->STATUS.STATE);
 
 	return 0;
 }
