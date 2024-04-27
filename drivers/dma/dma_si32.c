@@ -25,6 +25,18 @@ BUILD_ASSERT((uintptr_t)SI32_DMACTRL_0 == (uintptr_t)DT_INST_REG_ADDR(0),
 
 #define CHANNEL_COUNT DT_INST_PROP(0, dma_channels)
 
+struct dma_si32_data {
+	struct dma_context ctx; /* MUST BE FIRST!  See API docs */
+	dma_callback_t callbacks[CHANNEL_COUNT];
+};
+
+ATOMIC_DEFINE(dma_si32_atomic, CHANNEL_COUNT);
+static struct dma_si32_data dam_si32_data = {.ctx = {
+						     .magic = DMA_MAGIC,
+						     .atomic = dma_si32_atomic,
+						     .dma_channels = CHANNEL_COUNT,
+					     }};
+
 __aligned(SI32_DMADESC_PRI_ALIGN) struct SI32_DMADESC_A_Struct channels[CHANNEL_COUNT];
 
 static void dma_si32_isr_handler(uint8_t channel)
@@ -41,6 +53,11 @@ static void dma_si32_isr_handler(uint8_t channel)
 	__ASSERT(channel_descriptor->CONFIG.TMD == 0, "Result of success: TMD set to zero");
 	__ASSERT(channel_descriptor->CONFIG.NCOUNT == 0, "Result of success: All blocks processed");
 	__ASSERT(SI32_DMACTRL_0->CHENSET.CH0 == 0, "Result of success: Channel disabled");
+
+	if (dam_si32_data.callbacks[channel]) {
+		dam_si32_data.callbacks[channel](DEVICE_DT_INST_GET(0), NULL, channel,
+						 DMA_STATUS_COMPLETE);
+	}
 }
 
 #define DMA_SI32_IRQ_CONNECT(channel)                                                              \
@@ -91,6 +108,12 @@ static int dma_si32_init(const struct device *dev)
 int dma_si32_config(const struct device *dev, uint32_t channel, struct dma_config *cfg)
 {
 	const struct dma_block_config *block;
+	uint32_t count, config;
+
+	if (channel >= CHANNEL_COUNT) {
+		LOG_ERR("Invalid channel (id %" PRIu32 ", have %d)", channel, CHANNEL_COUNT);
+		return -EINVAL;
+	}
 
 	if (dev == NULL) {
 		LOG_ERR("Missing device");
@@ -101,30 +124,54 @@ int dma_si32_config(const struct device *dev, uint32_t channel, struct dma_confi
 		LOG_ERR("Missing config");
 		return -EINVAL;
 	}
-	block = cfg->head_block;
 
-	if (channel >= CHANNEL_COUNT) {
-		LOG_ERR("Invalid channel (id %" PRIu32 ", have %d)", channel, CHANNEL_COUNT);
+	dam_si32_data.callbacks[channel] = cfg->dma_callback;
+
+	if (cfg->block_count > 1) {
+		LOG_ERR("Can not deal with multiple blocks");
+		return -ENOTSUP;
+	}
+
+	if (!cfg->head_block || cfg->block_count == 0) {
+		LOG_ERR("Missing head block");
 		return -EINVAL;
 	}
 
-	if (!cfg->head_block) {
-		LOG_ERR("Missing head block");
+	block = cfg->head_block;
+
+	/*
+	 * NCOUNT can store 10 bits => the maximum is 1025 transfers (2**10 + 1)
+	 * The biggest transfer size is a word (4 bytes)
+	 * => 1025 transfers * 4 bytes per transfer = 4100 bytes maximum
+	 */
+	if (block->block_size > 4100) {
+		LOG_ERR("Max size size exceeded");
 		return -EINVAL;
 	}
 
 	switch (cfg->channel_direction) {
 	case 0b000: /* memory to memory */
 		break;
-	default: /* everything else is not supported */
+	default: /* everything else is not (yet) supported */
 		return -ENOTSUP;
 	}
 
-	LOG_INF("Configuring channel %" PRIu32 " to transfer %d bytes", channel, block->block_size);
+	/* Minimize number of transfers, maximize possible data size */
+	if (block->block_size % 4 == 0) {
+		count = block->block_size / 4;
+		config = SI32_DMADESC_A_CONFIG_WORD_MOVE_AUTO;
+	} else if (block->block_size % 2 == 0) {
+		count = block->block_size / 2;
+		config = SI32_DMADESC_A_CONFIG_HWORD_MOVE_AUTO;
+	} else {
+		count = block->block_size;
+		config = SI32_DMADESC_A_CONFIG_BYTE_MOVE_AUTO;
+	}
+	LOG_INF("Configuring channel %" PRIu32 ": %d transfers à %d bytes", channel, count,
+		block->block_size / count);
 
 	SI32_DMADESC_A_configure(&channels[channel], (void *)block->source_address,
-				 (void *)block->dest_address, block->block_size,
-				 SI32_DMADESC_A_CONFIG_BYTE_MOVE_AUTO);
+				 (void *)block->dest_address, count, config);
 
 	SI32_DMACTRL_A_disable_data_request(SI32_DMACTRL_0, channel);
 	SI32_DMACTRL_A_enable_channel(SI32_DMACTRL_0, channel);
@@ -136,13 +183,13 @@ int dma_si32_start(const struct device *dev, uint32_t channel)
 {
 	struct SI32_DMADESC_A_Struct *channel_desc = &channels[channel];
 
-	if (dev == NULL) {
-		LOG_ERR("Missing device");
+	if (channel >= CHANNEL_COUNT) {
+		LOG_ERR("Invalid channel (id %" PRIu32 ", have %d)", channel, CHANNEL_COUNT);
 		return -EINVAL;
 	}
 
-	if (channel >= CHANNEL_COUNT) {
-		LOG_ERR("Invalid channel (id %" PRIu32 ", have %d)", channel, CHANNEL_COUNT);
+	if (dev == NULL) {
+		LOG_ERR("Missing device");
 		return -EINVAL;
 	}
 
@@ -160,20 +207,20 @@ int dma_si32_start(const struct device *dev, uint32_t channel)
 		 "a. Set the SRCEND field to the last address of the source data.");
 	__ASSERT(channel_desc->DSTEND.U32,
 		 "b. Set the DSTEND field to the last address of the destination memory.");
-	__ASSERT(channel_desc->CONFIG.DSTAIMD == 0 && channel_desc->CONFIG.SRCAIMD == 0,
+	__ASSERT(channel_desc->CONFIG.DSTAIMD == channel_desc->CONFIG.SRCAIMD,
 		 "c. Set the destination and source address increment modes (DSTAIMD and "
 		 "SRCAIMD). In most cases, these values should be the same");
-	__ASSERT(channel_desc->CONFIG.DSTSIZE == 0,
-		 "d. Set the destination and source data size (DSTSIZE and SRCSIZE) to the "
-		 "same value.");
-	__ASSERT(channel_desc->CONFIG.SRCSIZE == 0,
-		 "d. Set the destination and source data size (DSTSIZE and SRCSIZE) to the "
-		 "same value.");
+	// __ASSERT(channel_desc->CONFIG.DSTSIZE == 0,
+	// 	 "d. Set the destination and source data size (DSTSIZE and SRCSIZE) to the "
+	// 	 "same value.");
+	// __ASSERT(channel_desc->CONFIG.SRCSIZE == 0,
+	// 	 "d. Set the destination and source data size (DSTSIZE and SRCSIZE) to the "
+	// 	 "same value.");
 	__ASSERT(channel_desc->CONFIG.RPOWER == 0,
 		 "e. Set the RPOWER to the desired number of data transfers between "
 		 "rearbitration. In most cases, this value can be 0.");
-	__ASSERT(channel_desc->CONFIG.NCOUNT == 47,
-		 "f. Set the NCOUNT field to the total number of transfers minus 1.");
+	// __ASSERT(channel_desc->CONFIG.NCOUNT == 47,
+	// 	 "f. Set the NCOUNT field to the total number of transfers minus 1.");
 	__ASSERT(channel_desc->CONFIG.TMD == 2,
 		 "g. Set the transfer mode to the auto-request type (TMD = 2).");
 	__ASSERT(SI32_DMACTRL_0->CHREQMSET.U32 & BIT(channel),
@@ -198,13 +245,13 @@ int dma_si32_start(const struct device *dev, uint32_t channel)
 
 int dma_si32_stop(const struct device *dev, uint32_t channel)
 {
-	if (dev == NULL) {
-		LOG_ERR("Missing device");
+	if (channel >= CHANNEL_COUNT) {
+		LOG_ERR("Invalid channel (id %" PRIu32 ", have %d)", channel, CHANNEL_COUNT);
 		return -EINVAL;
 	}
 
-	if (channel >= CHANNEL_COUNT) {
-		LOG_ERR("Invalid channel (id %" PRIu32 ", have %d)", channel, CHANNEL_COUNT);
+	if (dev == NULL) {
+		LOG_ERR("Missing device");
 		return -EINVAL;
 	}
 
@@ -221,5 +268,5 @@ static const struct dma_driver_api dma_si32_driver_api = {
 	.stop = dma_si32_stop,
 };
 
-DEVICE_DT_INST_DEFINE(0, &dma_si32_init, NULL, NULL, NULL, POST_KERNEL, CONFIG_DMA_INIT_PRIORITY,
-		      &dma_si32_driver_api);
+DEVICE_DT_INST_DEFINE(0, &dma_si32_init, NULL, &dam_si32_data, NULL, POST_KERNEL,
+		      CONFIG_DMA_INIT_PRIORITY, &dma_si32_driver_api);
