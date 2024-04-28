@@ -13,5 +13,6 @@ toolchain:
   - xtools
   - zephyr
 supported:
+  - dma
   - gpio
 vendor: gardena
