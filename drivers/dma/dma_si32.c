@@ -27,6 +27,7 @@ BUILD_ASSERT((uintptr_t)SI32_DMACTRL_0 == (uintptr_t)DT_INST_REG_ADDR(0),
 
 struct dma_si32_channel_data {
 	dma_callback_t callback;
+	void *callback_user_data;
 	unsigned int TMD: 3;
 };
 
@@ -48,6 +49,7 @@ static void dma_si32_isr_handler(uint8_t channel)
 {
 	const struct SI32_DMADESC_A_Struct *channel_descriptor = &channels[channel];
 	const dma_callback_t cb = dam_si32_data.channels[channel].callback;
+	void *user_data = dam_si32_data.channels[channel].callback_user_data;
 	int result;
 
 	LOG_DBG("Channel %" PRIu8 " ISR fired", channel);
@@ -60,12 +62,13 @@ static void dma_si32_isr_handler(uint8_t channel)
 		__ASSERT(channel_descriptor->CONFIG.TMD == 0, "Result of success: TMD set to zero");
 		__ASSERT(channel_descriptor->CONFIG.NCOUNT == 0,
 			 "Result of success: All blocks processed");
+		(void)channel_descriptor;
 		__ASSERT((SI32_DMACTRL_0->CHENSET.U32 & BIT(channel)) == 0,
 			 "Result of success: Channel disabled");
 	}
 
 	if (cb) {
-		cb(DEVICE_DT_INST_GET(0), NULL, channel, result);
+		cb(DEVICE_DT_INST_GET(0), user_data, channel, result);
 	}
 }
 
@@ -117,7 +120,7 @@ static int dma_si32_init(const struct device *dev)
 static int dma_si32_config(const struct device *dev, uint32_t channel, struct dma_config *cfg)
 {
 	const struct dma_block_config *block;
-	uint32_t count, config = 0;
+	uint32_t data_size, config = 0;
 
 	if (channel >= CHANNEL_COUNT) {
 		LOG_ERR("Invalid channel (id %" PRIu32 ", have %d)", channel, CHANNEL_COUNT);
@@ -134,13 +137,86 @@ static int dma_si32_config(const struct device *dev, uint32_t channel, struct dm
 		return -EINVAL;
 	}
 
-	dam_si32_data.channels[channel].callback = cfg->dma_callback;
+	if (cfg->complete_callback_en > 1) {
+		LOG_ERR("Callback on each block not implemented");
+		return -ENOTSUP;
+	}
+
+	if (cfg->error_callback_dis > 1) {
+		LOG_ERR("Error callback disabling not implemented");
+		return -ENOTSUP;
+	}
+
+	if (cfg->source_handshake > 1 || cfg->dest_handshake > 1) {
+		LOG_ERR("Handshake not implemented");
+		return -ENOTSUP;
+	}
+
+	if (cfg->channel_priority > 1) {
+		LOG_ERR("Channel priority not implemented");
+		return -ENOTSUP;
+	}
+
+	if (cfg->source_chaining_en > 1 || cfg->dest_chaining_en > 1) {
+		LOG_ERR("Chaining not implemented");
+		return -ENOTSUP;
+	}
+
+	if (cfg->linked_channel > 1) {
+		LOG_ERR("Linked channel not implemented");
+		return -ENOTSUP;
+	}
+
+	if (cfg->cyclic > 1) {
+		LOG_ERR("Cyclic transfer not implemented");
+		return -ENOTSUP;
+	}
+
+	if (cfg->source_data_size != 1 && cfg->source_data_size != 2 &&
+	    cfg->source_data_size != 4) {
+		LOG_ERR("source_data_size must be 1, 2, or 4 (%" PRIu32 ")", cfg->source_data_size);
+		return -EINVAL;
+	}
+
+	if (cfg->dest_data_size != 1 && cfg->dest_data_size != 2 && cfg->dest_data_size != 4) {
+		LOG_ERR("dest_data_size must be 1, 2, or 4 (%" PRIu32 ")", cfg->dest_data_size);
+		return -EINVAL;
+	}
+
+	__ASSERT(cfg->source_data_size == cfg->dest_data_size,
+		 "The destination size (DSTSIZE) must equal the source size (SRCSIZE).");
+
+	if (cfg->source_burst_length != 0 || cfg->dest_burst_length != 0) {
+		LOG_ERR("Burst mode not supported");
+		return -ENOTSUP;
+	}
+	__ASSERT_NO_MSG(cfg->source_burst_length == cfg->dest_burst_length);
 
 	if (cfg->block_count > 1) {
 		LOG_ERR("Scatter-Gather not implemented");
 		return -ENOTSUP;
 	}
 
+	/* Config is sane, start using it */
+	dam_si32_data.channels[channel].callback = cfg->dma_callback;
+	dam_si32_data.channels[channel].callback_user_data = cfg->user_data;
+
+	data_size = find_msb_set(cfg->source_data_size) - 1;
+
+	if (data_size) {
+		count = block->block_size / 4;
+		config = SI32_DMADESC_A_CONFIG_WORD_MOVE_AUTO;
+	} else if (block->block_size % 2 == 0) {
+		count = block->block_size / 2;
+		config = SI32_DMADESC_A_CONFIG_HWORD_MOVE_AUTO;
+	} else {
+		count = block->block_size;
+		config = SI32_DMADESC_A_CONFIG_BYTE_MOVE_AUTO;
+	}
+	LOG_DBG("Configuring channel %" PRIu32 ": %d transfers à %d bytes", channel, count,
+		block->block_size / count);
+
+	/* Configuration evaluated and extracted, except for its (first) block. Do this now. */
 	if (!cfg->head_block || cfg->block_count == 0) {
 		LOG_ERR("Missing head block");
 		return -EINVAL;
@@ -169,20 +245,6 @@ static int dma_si32_config(const struct device *dev, uint32_t channel, struct dm
 		LOG_ERR("Channel direction not implemented: %d", cfg->channel_direction);
 		return -ENOTSUP;
 	}
-
-	/* Minimize number of transfers, maximize possible data size */
-	if (block->block_size % 4 == 0) {
-		count = block->block_size / 4;
-		config = SI32_DMADESC_A_CONFIG_WORD_MOVE_AUTO;
-	} else if (block->block_size % 2 == 0) {
-		count = block->block_size / 2;
-		config = SI32_DMADESC_A_CONFIG_HWORD_MOVE_AUTO;
-	} else {
-		count = block->block_size;
-		config = SI32_DMADESC_A_CONFIG_BYTE_MOVE_AUTO;
-	}
-	LOG_DBG("Configuring channel %" PRIu32 ": %d transfers à %d bytes", channel, count,
-		block->block_size / count);
 
 	SI32_DMADESC_A_configure(&channels[channel], (void *)block->source_address,
 				 (void *)block->dest_address, count, config);
