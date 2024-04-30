@@ -19,5 +19,15 @@
 			input-enable;
 		};
 	};
-};
 
+	usart1_default: usart1_default {
+		group1 {
+			pinmux = <SI32_MUX(USART1_TX, 0, 13)>;
+			output-enable;
+		};
+		group2 {
+			pinmux = <SI32_MUX(USART1_RX, 0, 14)>;
+			input-enable;
+		};
+	};
+};
