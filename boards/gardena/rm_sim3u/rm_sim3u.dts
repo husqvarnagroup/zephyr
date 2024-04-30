@@ -13,7 +13,7 @@
 	compatible = "gardena,rm_sim3u", "silabs,sim3u167bgm","silabs,sim3u";
 
 	chosen {
-		zephyr,console = &usart0;
+		zephyr,console = &usart1;
 		zephyr,shell-uart = &usart0;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
@@ -43,6 +43,13 @@
 	pinctrl-0 = <&usart0_default>;
 	pinctrl-names = "default";
 	hw-flow-control;
+	status = "okay";
+};
+
+&usart1 {
+	current-speed = <115200>;
+	pinctrl-0 = <&usart1_default>;
+	pinctrl-names = "default";
 	status = "okay";
 };
 
