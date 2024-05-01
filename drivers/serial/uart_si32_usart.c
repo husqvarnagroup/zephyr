@@ -52,8 +52,9 @@ static void usart_si32_poll_out(const struct device *dev, unsigned char c)
 	const struct usart_si32_config *config = dev->config;
 
 	while (SI32_USART_A_read_tx_fifo_count(config->usart) ||
-	       SI32_USART_A_is_tx_busy(config->usart))
-		;
+	       SI32_USART_A_is_tx_busy(config->usart)) {
+		/* busy wait */
+	}
 
 	SI32_USART_A_write_data_u8(config->usart, c);
 }
@@ -123,42 +124,49 @@ static int usart_si32_fifo_read(const struct device *dev, uint8_t *rx_data, cons
 static void usart_si32_irq_tx_enable(const struct device *dev)
 {
 	const struct usart_si32_config *config = dev->config;
+
 	SI32_USART_A_enable_tx_data_request_interrupt(config->usart);
 }
 
 static void usart_si32_irq_tx_disable(const struct device *dev)
 {
 	const struct usart_si32_config *config = dev->config;
+
 	SI32_USART_A_disable_tx_data_request_interrupt(config->usart);
 }
 
 static int usart_si32_irq_tx_ready(const struct device *dev)
 {
 	const struct usart_si32_config *config = dev->config;
+
 	return SI32_USART_A_is_tx_data_request_interrupt_pending(config->usart);
 }
 
 static int usart_si32_irq_tx_complete(const struct device *dev)
 {
 	const struct usart_si32_config *config = dev->config;
+
 	return SI32_USART_A_is_tx_complete(config->usart);
 }
 
 static void usart_si32_irq_rx_enable(const struct device *dev)
 {
 	const struct usart_si32_config *config = dev->config;
+
 	SI32_USART_A_enable_rx_data_request_interrupt(config->usart);
 }
 
 static void usart_si32_irq_rx_disable(const struct device *dev)
 {
 	const struct usart_si32_config *config = dev->config;
+
 	SI32_USART_A_disable_rx_data_request_interrupt(config->usart);
 }
 
 static int usart_si32_irq_rx_ready(const struct device *dev)
 {
 	const struct usart_si32_config *config = dev->config;
+
 	return SI32_USART_A_is_rx_data_request_interrupt_pending(config->usart);
 }
 
@@ -185,6 +193,8 @@ static int usart_si32_irq_is_pending(const struct device *dev)
 
 static int usart_si32_irq_update(const struct device *dev)
 {
+	ARG_UNUSED(dev);
+
 	return 1;
 }
 
@@ -235,19 +245,21 @@ static int usart_si32_init(const struct device *dev)
 {
 	const struct usart_si32_config *config = dev->config;
 	struct usart_si32_data *data = dev->data;
+	uint32_t apb_freq;
+	uint32_t baud_register_value;
+	int ret;
+	enum SI32_USART_A_PARITY_Enum parity = SI32_USART_A_PARITY_ODD;
+	bool parity_enabled;
 
 	if (!device_is_ready(config->clock_dev)) {
 		return -ENODEV;
 	}
 
-	uint32_t apb_freq;
-	int ret = clock_control_get_rate(config->clock_dev, NULL, &apb_freq);
+	ret = clock_control_get_rate(config->clock_dev, NULL, &apb_freq);
 	if (ret) {
 		return ret;
 	}
 
-	enum SI32_USART_A_PARITY_Enum parity = SI32_USART_A_PARITY_ODD;
-	bool parity_enabled;
 	switch (config->parity) {
 	case UART_CFG_PARITY_NONE:
 		parity_enabled = false;
@@ -282,7 +294,7 @@ static int usart_si32_init(const struct device *dev)
 		return -ENOTSUP;
 	}
 
-	uint32_t baud_register_value = (apb_freq / (2 * data->baud_rate)) - 1;
+	baud_register_value = (apb_freq / (2 * data->baud_rate)) - 1;
 
 	SI32_USART_A_exit_loopback_mode(config->usart);
 
