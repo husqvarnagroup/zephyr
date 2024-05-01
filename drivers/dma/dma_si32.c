@@ -33,7 +33,7 @@ struct dma_si32_channel_data {
 
 struct dma_si32_data {
 	struct dma_context ctx; /* MUST BE FIRST!  See API docs */
-	struct dma_si32_channel_data channels[CHANNEL_COUNT];
+	struct dma_si32_channel_data channel_data[CHANNEL_COUNT];
 };
 
 ATOMIC_DEFINE(dma_si32_atomic, CHANNEL_COUNT);
@@ -43,13 +43,13 @@ static struct dma_si32_data dam_si32_data = {.ctx = {
 						     .dma_channels = CHANNEL_COUNT,
 					     }};
 
-__aligned(SI32_DMADESC_PRI_ALIGN) struct SI32_DMADESC_A_Struct channels[CHANNEL_COUNT];
+__aligned(SI32_DMADESC_PRI_ALIGN) struct SI32_DMADESC_A_Struct channel_descriptors[CHANNEL_COUNT];
 
 static void dma_si32_isr_handler(uint8_t channel)
 {
-	const struct SI32_DMADESC_A_Struct *channel_descriptor = &channels[channel];
-	const dma_callback_t cb = dam_si32_data.channels[channel].callback;
-	void *user_data = dam_si32_data.channels[channel].callback_user_data;
+	const struct SI32_DMADESC_A_Struct *channel_descriptor = &channel_descriptors[channel];
+	const dma_callback_t cb = dam_si32_data.channel_data[channel].callback;
+	void *user_data = dam_si32_data.channel_data[channel].callback_user_data;
 	int result;
 
 	LOG_DBG("Channel %" PRIu8 " ISR fired", channel);
@@ -99,12 +99,12 @@ static int dma_si32_init(const struct device *dev)
 	/* TODO: Peripheral clock, needed when doring more than just memory transfers */
 
 	/* Configure base address of the DMA channel descriptors */
-	SI32_DMACTRL_A_write_baseptr(SI32_DMACTRL_0, (uintptr_t)channels);
+	SI32_DMACTRL_A_write_baseptr(SI32_DMACTRL_0, (uintptr_t)channel_descriptors);
 
 	/* Enable the DMA interface */
 	SI32_DMACTRL_A_enable_module(SI32_DMACTRL_0);
 
-	/* Use primary descriptors only */
+	/* Primary descriptors only. This driver does do not support the more complex cases yet. */
 	SI32_DMACTRL_A_write_chalt(SI32_DMACTRL_0, 0);
 
 	/* AN666.pdf: The SCONFIG module contains a bit (FDMAEN) that enables faster DMA transfers
@@ -112,6 +112,7 @@ static int dma_si32_init(const struct device *dev)
 	 */
 	SI32_SCONFIG_A_enter_fast_dma_mode(SI32_SCONFIG_0);
 
+	/* Install handlers for all channels */
 	LISTIFY(DT_NUM_IRQS(DT_DRV_INST(0)), DMA_SI32_IRQ_CONNECT_GEN, (;));
 
 	return 0;
@@ -120,12 +121,15 @@ static int dma_si32_init(const struct device *dev)
 static int dma_si32_config(const struct device *dev, uint32_t channel, struct dma_config *cfg)
 {
 	const struct dma_block_config *block;
-	uint32_t data_size, config = 0;
+	struct SI32_DMADESC_A_Struct *channel_descriptor;
+	uint32_t ncount;
 
 	if (channel >= CHANNEL_COUNT) {
 		LOG_ERR("Invalid channel (id %" PRIu32 ", have %d)", channel, CHANNEL_COUNT);
 		return -EINVAL;
 	}
+
+	channel_descriptor = &channel_descriptors[channel];
 
 	if (dev == NULL) {
 		LOG_ERR("Missing device");
@@ -175,22 +179,26 @@ static int dma_si32_config(const struct device *dev, uint32_t channel, struct dm
 	if (cfg->source_data_size != 1 && cfg->source_data_size != 2 &&
 	    cfg->source_data_size != 4) {
 		LOG_ERR("source_data_size must be 1, 2, or 4 (%" PRIu32 ")", cfg->source_data_size);
-		return -EINVAL;
+		return -ENOTSUP;
 	}
 
 	if (cfg->dest_data_size != 1 && cfg->dest_data_size != 2 && cfg->dest_data_size != 4) {
 		LOG_ERR("dest_data_size must be 1, 2, or 4 (%" PRIu32 ")", cfg->dest_data_size);
-		return -EINVAL;
+		return -ENOTSUP;
 	}
 
 	__ASSERT(cfg->source_data_size == cfg->dest_data_size,
 		 "The destination size (DSTSIZE) must equal the source size (SRCSIZE).");
 
-	if (cfg->source_burst_length != 0 || cfg->dest_burst_length != 0) {
-		LOG_ERR("Burst mode not supported");
+	if (cfg->source_burst_length != cfg->dest_burst_length) {
+		LOG_ERR("Individual burst modes not supported");
 		return -ENOTSUP;
 	}
-	__ASSERT_NO_MSG(cfg->source_burst_length == cfg->dest_burst_length);
+
+	if (POPCOUNT(cfg->source_burst_length) > 1) {
+		LOG_ERR("Burst lengths must be power of two");
+		return -ENOTSUP;
+	}
 
 	if (cfg->block_count > 1) {
 		LOG_ERR("Scatter-Gather not implemented");
@@ -198,23 +206,29 @@ static int dma_si32_config(const struct device *dev, uint32_t channel, struct dm
 	}
 
 	/* Config is sane, start using it */
-	dam_si32_data.channels[channel].callback = cfg->dma_callback;
-	dam_si32_data.channels[channel].callback_user_data = cfg->user_data;
+	dam_si32_data.channel_data[channel].callback = cfg->dma_callback;
+	dam_si32_data.channel_data[channel].callback_user_data = cfg->user_data;
 
-	data_size = find_msb_set(cfg->source_data_size) - 1;
+	channel_descriptor->CONFIG.RPOWER =
+		cfg->source_burst_length ? find_msb_set(cfg->source_burst_length) - 1 : 0;
 
-	if (data_size) {
-		count = block->block_size / 4;
-		config = SI32_DMADESC_A_CONFIG_WORD_MOVE_AUTO;
-	} else if (block->block_size % 2 == 0) {
-		count = block->block_size / 2;
-		config = SI32_DMADESC_A_CONFIG_HWORD_MOVE_AUTO;
-	} else {
-		count = block->block_size;
-		config = SI32_DMADESC_A_CONFIG_BYTE_MOVE_AUTO;
+	switch (cfg->source_data_size) {
+	case 4:
+		channel_descriptor->CONFIG.SRCSIZE = 0b10;
+		channel_descriptor->CONFIG.DSTSIZE = 0b10;
+		break;
+	case 2:
+		channel_descriptor->CONFIG.SRCSIZE = 0b01;
+		channel_descriptor->CONFIG.DSTSIZE = 0b01;
+		break;
+	case 1:
+		channel_descriptor->CONFIG.SRCSIZE = 0b00;
+		channel_descriptor->CONFIG.DSTSIZE = 0b00;
+		break;
+	default:
+		LOG_ERR("source_data_size must be 1, 2, or 4 (%" PRIu32 ")", cfg->source_data_size);
+		return -EINVAL;
 	}
-	LOG_DBG("Configuring channel %" PRIu32 ": %d transfers à %d bytes", channel, count,
-		block->block_size / count);
 
 	/* Configuration evaluated and extracted, except for its (first) block. Do this now. */
 	if (!cfg->head_block || cfg->block_count == 0) {
@@ -224,30 +238,69 @@ static int dma_si32_config(const struct device *dev, uint32_t channel, struct dm
 
 	block = cfg->head_block;
 
-	/*
-	 * NCOUNT can store 10 bits => the maximum is 1025 transfers (2**10 + 1)
-	 * The biggest transfer size is a word (4 bytes)
-	 * => 1025 transfers * 4 bytes per transfer = 4100 bytes maximum
-	 */
-	if (block->block_size > 4100) {
-		LOG_ERR("Max size size exceeded");
+	if (block->block_size % cfg->source_data_size != 0) {
+		LOG_ERR("Block size not aliged with data size");
 		return -EINVAL;
 	}
 
+	ncount = block->block_size / cfg->source_data_size - 1;
+
+	/* NCOUNT works only for values up to 1023 (1024 transfers) */
+	if (ncount >= 1024) {
+		LOG_ERR("Transfer size exceeded");
+		return -EINVAL;
+	}
+
+	channel_descriptor->CONFIG.NCOUNT = ncount;
+
+	/* Copy data to own location so that cfg must not exist during all of the channels usage */
 	switch (cfg->channel_direction) {
 	case 0b000: /* memory to memory */
 		/* SiM3U1xx-SiM3C1xx-RM.pdf, 16.6.2. Auto-Request Transfers:
 		 * This transfer type is recommended for memory to memory transfers.
 		 */
-		dam_si32_data.channels[channel].TMD = SI32_DMADESC_A_CONFIG_TMD_AUTO_REQUEST_VALUE;
+		dam_si32_data.channel_data[channel].TMD =
+			SI32_DMADESC_A_CONFIG_TMD_AUTO_REQUEST_VALUE;
 		break;
 	default: /* everything else is not (yet) supported */
 		LOG_ERR("Channel direction not implemented: %d", cfg->channel_direction);
 		return -ENOTSUP;
 	}
 
-	SI32_DMADESC_A_configure(&channels[channel], (void *)block->source_address,
-				 (void *)block->dest_address, count, config);
+	switch (block->source_addr_adj) {
+	case 0b00: /* increment */
+		channel_descriptor->SRCEND.U32 =
+			block->source_address + ncount * cfg->source_data_size;
+		channel_descriptor->CONFIG.SRCAIMD = channel_descriptor->CONFIG.SRCSIZE;
+		break;
+	case 0b01: /* decrement */
+		LOG_ERR("source_addr_adj value not supported by HW");
+		return -ENOTSUP;
+	case 0b10: /* no change */
+		channel_descriptor->SRCEND.U32 = block->source_address;
+		channel_descriptor->CONFIG.SRCAIMD = 0b11;
+		break;
+	default:
+		LOG_ERR("Unknown source_addr_adj value");
+		return -EINVAL;
+	}
+
+	switch (block->dest_addr_adj) {
+	case 0b00: /* increment */
+		channel_descriptor->DSTEND.U32 = block->dest_address + ncount * cfg->dest_data_size;
+		channel_descriptor->CONFIG.DSTAIMD = channel_descriptor->CONFIG.DSTSIZE;
+		break;
+	case 0b01: /* decrement */
+		LOG_ERR("dest_addr_adj value not supported by HW");
+		return -ENOTSUP;
+	case 0b10: /* no change */
+		channel_descriptor->DSTEND.U32 = block->dest_address;
+		channel_descriptor->CONFIG.DSTAIMD = 0b11;
+		break;
+	default:
+		LOG_ERR("Unknown dest_addr_adj value");
+		return -EINVAL;
+	}
 
 	SI32_DMACTRL_A_disable_data_request(SI32_DMACTRL_0, channel);
 	SI32_DMACTRL_A_enable_channel(SI32_DMACTRL_0, channel);
@@ -257,7 +310,7 @@ static int dma_si32_config(const struct device *dev, uint32_t channel, struct dm
 
 static int dma_si32_start(const struct device *dev, uint32_t channel)
 {
-	struct SI32_DMADESC_A_Struct *channel_desc = &channels[channel];
+	struct SI32_DMADESC_A_Struct *channel_desc = &channel_descriptors[channel];
 
 	if (channel >= CHANNEL_COUNT) {
 		LOG_ERR("Invalid channel (id %" PRIu32 ", have %d)", channel, CHANNEL_COUNT);
@@ -274,7 +327,7 @@ static int dma_si32_start(const struct device *dev, uint32_t channel)
 		 "1. Enable the AHB and APB clocks to the DMA controller.");
 	__ASSERT(SI32_DMACTRL_A_is_enabled(SI32_DMACTRL_0),
 		 "2. Enable the DMA module (DMAEN = 1).");
-	__ASSERT(SI32_DMACTRL_0->BASEPTR.U32 == (uintptr_t)channels,
+	__ASSERT(SI32_DMACTRL_0->BASEPTR.U32 == (uintptr_t)channel_descriptors,
 		 "3. Set the address location of the channel transfer descriptors (BASEPTR)");
 	__ASSERT(SI32_DMACTRL_A_is_primary_selected(SI32_DMACTRL_0, channel),
 		 "4. Use the CHALTCLR register to set the channel to use the primary descriptor");
@@ -292,12 +345,12 @@ static int dma_si32_start(const struct device *dev, uint32_t channel)
 	// __ASSERT(channel_desc->CONFIG.SRCSIZE == 0,
 	// 	 "d. Set the destination and source data size (DSTSIZE and SRCSIZE) to the "
 	// 	 "same value.");
-	__ASSERT(channel_desc->CONFIG.RPOWER == 0,
-		 "e. Set the RPOWER to the desired number of data transfers between "
-		 "rearbitration. In most cases, this value can be 0.");
+	// __ASSERT(channel_desc->CONFIG.RPOWER == 0,
+	// 	 "e. Set the RPOWER to the desired number of data transfers between "
+	// 	 "rearbitration. In most cases, this value can be 0.");
 	// __ASSERT(channel_desc->CONFIG.NCOUNT == 47,
 	// 	 "f. Set the NCOUNT field to the total number of transfers minus 1.");
-	channel_desc->CONFIG.TMD = dam_si32_data.channels[channel].TMD;
+	channel_desc->CONFIG.TMD = dam_si32_data.channel_data[channel].TMD;
 	__ASSERT(channel_desc->CONFIG.TMD == 2,
 		 "g. Set the transfer mode to the auto-request type (TMD = 2).");
 	__ASSERT(SI32_DMACTRL_0->CHREQMSET.U32 & BIT(channel),
@@ -312,10 +365,6 @@ static int dma_si32_start(const struct device *dev, uint32_t channel)
 	/* 10. Submit a request to start the transfer. */
 	LOG_DBG("Generate SW request for channel %" PRIu32, channel);
 	SI32_DMACTRL_A_generate_software_request(SI32_DMACTRL_0, channel);
-
-	/* Own stuff */
-	__ASSERT(!SI32_DMACTRL_A_is_bus_error_set(SI32_DMACTRL_0), "No error allowed");
-	LOG_DBG("State machine state: %d", SI32_DMACTRL_0->STATUS.STATE);
 
 	return 0;
 }
@@ -334,7 +383,7 @@ static int dma_si32_stop(const struct device *dev, uint32_t channel)
 
 	irq_disable(DMACH0_IRQn + channel);
 
-	channels[channel].CONFIG.TMD = 0;
+	channel_descriptors[channel].CONFIG.TMD = 0;
 
 	return 0;
 }
