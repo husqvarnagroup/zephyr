@@ -28,6 +28,9 @@
 #include <zephyr/pm/device.h>
 #include <zephyr/ztest.h>
 
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(test_dma_loop, CONFIG_DMA_LOG_LEVEL);
+
 /* in millisecond */
 #define SLEEPTIME 250
 
@@ -44,6 +47,7 @@ static int test_case_id;
 
 static void test_transfer(const struct device *dev, uint32_t id)
 {
+	TC_PRINT("Completed transfer #%" PRIu32 "\n", transfer_count);
 	transfer_count++;
 	if (transfer_count < TRANSFER_LOOPS) {
 		dma_block_cfg.block_size = sizeof(tx_data);
@@ -165,6 +169,8 @@ static int test_loop(const struct device *dma)
 	for (int i = 0; i < TRANSFER_LOOPS; i++) {
 		TC_PRINT("RX data Loop %d\n", i);
 		if (memcmp(tx_data, rx_data[i], CONFIG_DMA_LOOP_TRANSFER_SIZE)) {
+			LOG_HEXDUMP_ERR(tx_data, CONFIG_DMA_LOOP_TRANSFER_SIZE, "TX");
+			LOG_HEXDUMP_ERR(rx_data[i], CONFIG_DMA_LOOP_TRANSFER_SIZE, "RX");
 			return TC_FAIL;
 		}
 	}
@@ -309,6 +315,8 @@ static int test_loop_suspend_resume(const struct device *dma)
 	for (int i = 0; i < TRANSFER_LOOPS; i++) {
 		TC_PRINT("RX data Loop %d\n", i);
 		if (memcmp(tx_data, rx_data[i], CONFIG_DMA_LOOP_TRANSFER_SIZE)) {
+			LOG_HEXDUMP_ERR(tx_data, CONFIG_DMA_LOOP_TRANSFER_SIZE, "TX");
+			LOG_HEXDUMP_ERR(rx_data[i], CONFIG_DMA_LOOP_TRANSFER_SIZE, "RX");
 			return TC_FAIL;
 		}
 	}
@@ -447,6 +455,8 @@ static int test_loop_repeated_start_stop(const struct device *dma)
 	for (int i = 0; i < TRANSFER_LOOPS; i++) {
 		TC_PRINT("RX data Loop %d\n", i);
 		if (memcmp(tx_data, rx_data[i], CONFIG_DMA_LOOP_TRANSFER_SIZE)) {
+			LOG_HEXDUMP_ERR(tx_data, CONFIG_DMA_LOOP_TRANSFER_SIZE, "TX");
+			LOG_HEXDUMP_ERR(rx_data[i], CONFIG_DMA_LOOP_TRANSFER_SIZE, "RX");
 			return TC_FAIL;
 		}
 	}
