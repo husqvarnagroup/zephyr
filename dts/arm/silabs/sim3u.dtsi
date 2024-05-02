@@ -155,7 +155,7 @@
 			dmas = <&dma 5 0 0>,
 			       <&dma 6 0 0>,
 			       <&dma 7 0 0>;
-			dma-names = "output", "input", "xor";
+			dma-names = "tx", "rx", "xor";
 		};
 	};
 };
