@@ -656,8 +656,8 @@ int main(void)
 
 		total_cycles = timing_cycles_get(&start_time, &end_time);
 		total_ns = timing_cycles_to_ns(total_cycles);
-		LOG_INF("%s Timing: %" PRIu64 " ns, %" PRIu64 " cylces", modes[i].mode, total_ns,
-			total_cycles);
+		printk("%s Timing: %" PRIu64 " ns, %" PRIu64 " cycles\n", modes[i].mode, total_ns,
+		       total_cycles);
 	}
 
 	return 0;
