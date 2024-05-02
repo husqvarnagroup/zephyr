@@ -13,6 +13,7 @@
 #include <zephyr/init.h>
 #include <errno.h>
 #include <zephyr/crypto/crypto.h>
+#include <zephyr/sys/byteorder.h>
 
 #if !defined(CONFIG_MBEDTLS_CFG_FILE)
 #include "mbedtls/config.h"
@@ -20,7 +21,9 @@
 #include CONFIG_MBEDTLS_CFG_FILE
 #endif /* CONFIG_MBEDTLS_CFG_FILE */
 
+#ifdef CONFIG_MBEDTLS_CIPHER_CCM_ENABLED
 #include <mbedtls/ccm.h>
+#endif
 #ifdef CONFIG_MBEDTLS_CIPHER_GCM_ENABLED
 #include <mbedtls/gcm.h>
 #endif
@@ -29,8 +32,8 @@
 #include <mbedtls/sha256.h>
 #include <mbedtls/sha512.h>
 
-#define MTLS_SUPPORT (CAP_RAW_KEY | CAP_SEPARATE_IO_BUFS | CAP_SYNC_OPS | \
-		      CAP_NO_IV_PREFIX)
+#define MTLS_SUPPORT (CAP_RAW_KEY | CAP_INPLACE_OPS | CAP_SEPARATE_IO_BUFS | CAP_SYNC_OPS | \
+		      CAP_NO_IV_PREFIX | CAP_AES_CTR_CUSTOM_COUNTER_INIT)
 
 #define LOG_LEVEL CONFIG_CRYPTO_LOG_LEVEL
 #include <zephyr/logging/log.h>
@@ -38,7 +41,9 @@ LOG_MODULE_REGISTER(mbedtls);
 
 struct mtls_shim_session {
 	union {
+#ifdef CONFIG_MBEDTLS_CIPHER_CCM_ENABLED
 		mbedtls_ccm_context mtls_ccm;
+#endif
 #ifdef CONFIG_MBEDTLS_CIPHER_GCM_ENABLED
 		mbedtls_gcm_context mtls_gcm;
 #endif
@@ -46,6 +51,9 @@ struct mtls_shim_session {
 		mbedtls_sha256_context mtls_sha256;
 		mbedtls_sha512_context mtls_sha512;
 	};
+#ifdef CONFIG_MBEDTLS_CIPHER_MODE_CTR_ENABLED
+	uint8_t mtls_ctr_current_counter[4];
+#endif
 	bool in_use;
 	union {
 		enum cipher_mode mode;
@@ -73,6 +81,7 @@ int mtls_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 {
 	int ret;
 	mbedtls_aes_context *ecb_ctx = MTLS_GET_CTX(ctx, aes);
+	uint8_t *out_buf;
 
 	/* For security reasons, ECB mode should not be used to encrypt
 	 * more than one block. Use CBC mode instead.
@@ -82,8 +91,19 @@ int mtls_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 		return -EINVAL;
 	}
 
+	if (pkt->in_len < 16) {
+		LOG_ERR("Cannot encrypt partial blocks");
+		return -EINVAL;
+	}
+
+	if (ctx->flags & CAP_INPLACE_OPS) {
+		out_buf = pkt->in_buf;
+	} else {
+		out_buf = pkt->out_buf;
+	}
+
 	ret = mbedtls_aes_crypt_ecb(ecb_ctx, MBEDTLS_AES_ENCRYPT,
-				    pkt->in_buf, pkt->out_buf);
+				    pkt->in_buf, out_buf);
 	if (ret) {
 		LOG_ERR("Could not encrypt (%d)", ret);
 		return -EINVAL;
@@ -98,6 +118,7 @@ int mtls_ecb_decrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 {
 	int ret;
 	mbedtls_aes_context *ecb_ctx = MTLS_GET_CTX(ctx, aes);
+	uint8_t *out_buf;
 
 	/* For security reasons, ECB mode should not be used to decrypt
 	 * more than one block. Use CBC mode instead.
@@ -107,8 +128,19 @@ int mtls_ecb_decrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 		return -EINVAL;
 	}
 
+	if (pkt->in_len < 16) {
+		LOG_ERR("Cannot decrypt partial blocks");
+		return -EINVAL;
+	}
+
+	if (ctx->flags & CAP_INPLACE_OPS) {
+		out_buf = pkt->in_buf;
+	} else {
+		out_buf = pkt->out_buf;
+	}
+
 	ret = mbedtls_aes_crypt_ecb(ecb_ctx, MBEDTLS_AES_DECRYPT,
-				    pkt->in_buf, pkt->out_buf);
+				    pkt->in_buf, out_buf);
 	if (ret) {
 		LOG_ERR("Could not encrypt (%d)", ret);
 		return -EINVAL;
@@ -121,9 +153,14 @@ int mtls_ecb_decrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 
 int mtls_cbc_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *iv)
 {
-	int ret, iv_bytes;
-	uint8_t *p_iv, iv_loc[16];
+	int ret, iv_bytes = 0;
 	mbedtls_aes_context *cbc_ctx = MTLS_GET_CTX(ctx, aes);
+	uint8_t *out_buf;
+
+	if (pkt->in_len % 16) {
+		LOG_ERR("Cannot encrypt partial blocks");
+		return -EINVAL;
+	}
 
 	if ((ctx->flags & CAP_NO_IV_PREFIX) == 0U) {
 		/* Prefix IV to ciphertext, which is default behavior of Zephyr
@@ -131,15 +168,16 @@ int mtls_cbc_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *iv
 		 */
 		iv_bytes = 16;
 		memcpy(pkt->out_buf, iv, 16);
-		p_iv = iv;
+	}
+
+	if (ctx->flags & CAP_INPLACE_OPS) {
+		out_buf = pkt->in_buf;
 	} else {
-		iv_bytes = 0;
-		memcpy(iv_loc, iv, 16);
-		p_iv = iv_loc;
+		out_buf = pkt->out_buf + iv_bytes;
 	}
 
 	ret = mbedtls_aes_crypt_cbc(cbc_ctx, MBEDTLS_AES_ENCRYPT, pkt->in_len,
-				    p_iv, pkt->in_buf, pkt->out_buf + iv_bytes);
+				    iv, pkt->in_buf, out_buf);
 	if (ret) {
 		LOG_ERR("Could not encrypt (%d)", ret);
 		return -EINVAL;
@@ -155,6 +193,12 @@ int mtls_cbc_decrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *iv
 	int ret, iv_bytes;
 	uint8_t *p_iv, iv_loc[16];
 	mbedtls_aes_context *cbc_ctx = MTLS_GET_CTX(ctx, aes);
+	uint8_t *out_buf;
+
+	if (pkt->in_len % 16) {
+		LOG_ERR("Cannot decrypt partial blocks");
+		return -EINVAL;
+	}
 
 	if ((ctx->flags & CAP_NO_IV_PREFIX) == 0U) {
 		iv_bytes = 16;
@@ -165,8 +209,14 @@ int mtls_cbc_decrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *iv
 		p_iv = iv_loc;
 	}
 
+	if (ctx->flags & CAP_INPLACE_OPS) {
+		out_buf = pkt->in_buf + iv_bytes;
+	} else {
+		out_buf = pkt->out_buf;
+	}
+
 	ret = mbedtls_aes_crypt_cbc(cbc_ctx, MBEDTLS_AES_DECRYPT, pkt->in_len,
-				    p_iv, pkt->in_buf + iv_bytes, pkt->out_buf);
+				    p_iv, pkt->in_buf + iv_bytes, out_buf);
 	if (ret) {
 		LOG_ERR("Could not encrypt (%d)", ret);
 		return -EINVAL;
@@ -177,6 +227,43 @@ int mtls_cbc_decrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *iv
 	return 0;
 }
 
+#ifdef CONFIG_MBEDTLS_CIPHER_MODE_CTR_ENABLED
+int mtls_ctr_op(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *iv)
+{
+	int ret;
+	size_t nc_off = 0;
+	unsigned char stream_block[16] = {0};
+	mbedtls_aes_context *crt_ctx = MTLS_GET_CTX(ctx, aes);
+	uint8_t *counter =
+		((struct mtls_shim_session *)ctx->drv_sessn_state)->mtls_ctr_current_counter;
+	uint8_t *out_buf;
+	uint8_t nonce[16];
+
+	memcpy(nonce, iv, 12);
+	memcpy(nonce + 12, counter, 4);
+
+	if (ctx->flags & CAP_INPLACE_OPS) {
+		out_buf = pkt->in_buf;
+	} else {
+		out_buf = pkt->out_buf;
+	}
+
+	ret = mbedtls_aes_crypt_ctr(crt_ctx, pkt->in_len, &nc_off, nonce, stream_block, pkt->in_buf,
+				    out_buf);
+	if (ret) {
+		LOG_ERR("Could not encrypt/decrypt (%d)", ret);
+		return -EINVAL;
+	}
+
+	memcpy(counter, nonce + 12, 4);
+
+	pkt->out_len = pkt->in_len;
+
+	return 0;
+}
+#endif
+
+#ifdef CONFIG_MBEDTLS_CIPHER_CCM_ENABLED
 static int mtls_ccm_encrypt_auth(struct cipher_ctx *ctx,
 				 struct cipher_aead_pkt *apkt,
 				 uint8_t *nonce)
@@ -236,6 +323,7 @@ static int mtls_ccm_decrypt_auth(struct cipher_ctx *ctx,
 
 	return 0;
 }
+#endif /* CONFIG_MBEDTLS_CIPHER_CCM_ENABLED */
 
 #ifdef CONFIG_MBEDTLS_CIPHER_GCM_ENABLED
 static int mtls_gcm_encrypt_auth(struct cipher_ctx *ctx,
@@ -317,7 +405,9 @@ static int mtls_session_setup(const struct device *dev,
 			      enum cipher_op op_type)
 {
 	mbedtls_aes_context *aes_ctx;
+#ifdef CONFIG_MBEDTLS_CIPHER_CCM_ENABLED
 	mbedtls_ccm_context *ccm_ctx;
+#endif
 #ifdef CONFIG_MBEDTLS_CIPHER_GCM_ENABLED
 	mbedtls_gcm_context *gcm_ctx;
 #endif
@@ -334,8 +424,13 @@ static int mtls_session_setup(const struct device *dev,
 		return -EINVAL;
 	}
 
-	if (mode != CRYPTO_CIPHER_MODE_CCM &&
-	    mode != CRYPTO_CIPHER_MODE_CBC &&
+	if (mode != CRYPTO_CIPHER_MODE_CBC &&
+#ifdef CONFIG_MBEDTLS_CIPHER_MODE_CTR_ENABLED
+	    mode != CRYPTO_CIPHER_MODE_CTR &&
+#endif
+#ifdef CONFIG_MBEDTLS_CIPHER_CCM_ENABLED
+	    mode != CRYPTO_CIPHER_MODE_CCM &&
+#endif
 #ifdef CONFIG_MBEDTLS_CIPHER_GCM_ENABLED
 	    mode != CRYPTO_CIPHER_MODE_GCM &&
 #endif
@@ -377,6 +472,11 @@ static int mtls_session_setup(const struct device *dev,
 		}
 		break;
 	case CRYPTO_CIPHER_MODE_CBC:
+		if (ctx->flags & CAP_INPLACE_OPS && (ctx->flags & CAP_NO_IV_PREFIX) == 0) {
+			LOG_ERR("In-place requires no IV prefix");
+			mtls_sessions[ctx_idx].in_use = false;
+			return -EINVAL;
+		}
 		aes_ctx = &mtls_sessions[ctx_idx].mtls_aes;
 		mbedtls_aes_init(aes_ctx);
 		if (op_type == CRYPTO_CIPHER_OP_ENCRYPT) {
@@ -395,6 +495,27 @@ static int mtls_session_setup(const struct device *dev,
 			return -EINVAL;
 		}
 		break;
+#ifdef CONFIG_MBEDTLS_CIPHER_MODE_CTR_ENABLED
+	case CRYPTO_CIPHER_MODE_CTR:
+		if (ctx->mode_params.ctr_info.ctr_len != 32U) {
+			LOG_ERR("Only 32 bit counter supported");
+			mtls_sessions[ctx_idx].in_use = false;
+			return -ENOTSUP;
+		}
+		sys_put_be32(ctx->mode_params.ctr_info.ctr_initial_value,
+			     mtls_sessions[ctx_idx].mtls_ctr_current_counter);
+		aes_ctx = &mtls_sessions[ctx_idx].mtls_aes;
+		mbedtls_aes_init(aes_ctx);
+		ret = mbedtls_aes_setkey_enc(aes_ctx, ctx->key.bit_stream, ctx->keylen * 8U);
+		if (ret) {
+			LOG_ERR("AES_CTR: failed at setkey (%d)", ret);
+			mtls_sessions[ctx_idx].in_use = false;
+			return -EINVAL;
+		}
+		ctx->ops.ctr_crypt_hndlr = mtls_ctr_op;
+		break;
+#endif /* CONFIG_MBEDTLS_CIPHER_MODE_CTR_ENABLED */
+#ifdef CONFIG_MBEDTLS_CIPHER_CCM_ENABLED
 	case CRYPTO_CIPHER_MODE_CCM:
 		ccm_ctx = &mtls_sessions[ctx_idx].mtls_ccm;
 		mbedtls_ccm_init(ccm_ctx);
@@ -412,6 +533,7 @@ static int mtls_session_setup(const struct device *dev,
 			ctx->ops.ccm_crypt_hndlr = mtls_ccm_decrypt_auth;
 		}
 		break;
+#endif /* CONFIG_MBEDTLS_CIPHER_CCM_ENABLED */
 #ifdef CONFIG_MBEDTLS_CIPHER_GCM_ENABLED
 	case CRYPTO_CIPHER_MODE_GCM:
 		gcm_ctx = &mtls_sessions[ctx_idx].mtls_gcm;
@@ -448,14 +570,20 @@ static int mtls_session_free(const struct device *dev, struct cipher_ctx *ctx)
 	struct mtls_shim_session *mtls_session =
 		(struct mtls_shim_session *)ctx->drv_sessn_state;
 
-	if (mtls_session->mode == CRYPTO_CIPHER_MODE_CCM) {
+	switch (mtls_session->mode) {
+#ifdef CONFIG_MBEDTLS_CIPHER_CCM_ENABLED
+	case CRYPTO_CIPHER_MODE_CCM:
 		mbedtls_ccm_free(&mtls_session->mtls_ccm);
-#ifdef CONFIG_MBEDTLS_CIPHER_GCM_ENABLED
-	} else if (mtls_session->mode == CRYPTO_CIPHER_MODE_GCM) {
-		mbedtls_gcm_free(&mtls_session->mtls_gcm);
+		break;
 #endif
-	} else {
+#ifdef CONFIG_MBEDTLS_CIPHER_GCM_ENABLED
+		case CRYPTO_CIPHER_MODE_GCM:
+		mbedtls_gcm_free(&mtls_session->mtls_gcm);
+		break;
+#endif
+	default:
 		mbedtls_aes_free(&mtls_session->mtls_aes);
+		break;
 	}
 	mtls_session->in_use = false;
 
