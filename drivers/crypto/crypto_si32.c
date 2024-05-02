@@ -36,12 +36,12 @@ LOG_MODULE_REGISTER(aes_silabs_si32);
 
 #define DMA_CHANNEL_COUNT DT_PROP(DT_INST(0, silabs_si32_dma), dma_channels)
 
-#define DMA_CHANNEL_ID_INPUT  DT_INST_DMAS_CELL_BY_NAME(0, input, channel)
-#define DMA_CHANNEL_ID_OUTPUT DT_INST_DMAS_CELL_BY_NAME(0, output, channel)
-#define DMA_CHANNEL_ID_XOR    DT_INST_DMAS_CELL_BY_NAME(0, xor, channel)
+#define DMA_CHANNEL_ID_RX  DT_INST_DMAS_CELL_BY_NAME(0, rx, channel)
+#define DMA_CHANNEL_ID_TX  DT_INST_DMAS_CELL_BY_NAME(0, tx, channel)
+#define DMA_CHANNEL_ID_XOR DT_INST_DMAS_CELL_BY_NAME(0, xor, channel)
 
-BUILD_ASSERT(DMA_CHANNEL_ID_INPUT < DMA_CHANNEL_COUNT, "Too few DMA channels");
-BUILD_ASSERT(DMA_CHANNEL_ID_OUTPUT < DMA_CHANNEL_COUNT, "Too few DMA channels");
+BUILD_ASSERT(DMA_CHANNEL_ID_RX < DMA_CHANNEL_COUNT, "Too few DMA channels");
+BUILD_ASSERT(DMA_CHANNEL_ID_TX < DMA_CHANNEL_COUNT, "Too few DMA channels");
 BUILD_ASSERT(DMA_CHANNEL_ID_XOR < DMA_CHANNEL_COUNT, "Too few DMA channels");
 
 struct crypto_si32_config {
@@ -49,20 +49,29 @@ struct crypto_si32_config {
 	unsigned int irq;
 };
 
-struct crypto_si32_data {
-	atomic_t session_in_use;
-};
+atomic_t session_in_use;
+K_SEM_DEFINE(work_done, 0, 1);
 
 static const struct crypto_si32_config crypto_si32_config = {
 	.base = SI32_AES_0,
 };
 
-static struct crypto_si32_data crypto_si32_data;
-
 static void crypto_si32_dma_completed(const struct device *dev, void *user_data, uint32_t channel,
 				      int status)
 {
-	LOG_ERR("AES0 finished work");
+	const char *const result = status == DMA_STATUS_COMPLETE ? "finished" : "failed";
+
+	switch (channel) {
+	case DMA_CHANNEL_ID_RX:
+		LOG_INF("AES0 RX DMA channel %s", result);
+		break;
+	case DMA_CHANNEL_ID_TX:
+		LOG_INF("AES0 TX DMA channel %s", result);
+		break;
+	case DMA_CHANNEL_ID_XOR:
+		LOG_INF("AES0 XOR DMA channel %s", result);
+		break;
+	}
 
 	return;
 }
@@ -146,8 +155,8 @@ static void assert_dma_settings_common(struct SI32_DMADESC_A_Struct *channel_des
 		 "RPOWER = 2 (4 data transfers per transaction).");
 }
 
-static void assert_dma_settings_channel_input(struct SI32_DMADESC_A_Struct *channel_descriptor,
-					      struct cipher_pkt *pkt)
+static void assert_dma_settings_channel_tx(struct SI32_DMADESC_A_Struct *channel_descriptor,
+					   struct cipher_pkt *pkt)
 {
 	assert_dma_settings_common(channel_descriptor);
 
@@ -168,8 +177,8 @@ static void assert_dma_settings_channel_input(struct SI32_DMADESC_A_Struct *chan
 		 "The SRCAIMD field should be set to 010b for word increments.");
 }
 
-static void assert_dma_settings_channel_output(struct SI32_DMADESC_A_Struct *channel_descriptor,
-					       struct cipher_pkt *pkt)
+static void assert_dma_settings_channel_rx(struct SI32_DMADESC_A_Struct *channel_descriptor,
+					   struct cipher_pkt *pkt)
 {
 	assert_dma_settings_common(channel_descriptor);
 
@@ -186,9 +195,10 @@ static void assert_dma_settings_channel_output(struct SI32_DMADESC_A_Struct *cha
 
 static int crypto_si32_aes_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 {
-	struct dma_block_config dma_block_input = {0};
-	struct dma_block_config dma_block_output = {0};
+	struct dma_block_config dma_block_tx = {0};
+	struct dma_block_config dma_block_rx = {0};
 	const struct device *dma = DEVICE_DT_GET(DT_NODELABEL(dma));
+
 	int ret;
 
 	if (!pkt->in_len) {
@@ -211,51 +221,51 @@ static int crypto_si32_aes_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt
 		return -ENOSYS;
 	}
 
-	/* Set up input DMA channel */
-	dma_block_input.block_size = pkt->in_len;
-	dma_block_input.source_address = (uintptr_t)pkt->in_buf;
-	dma_block_input.source_addr_adj = 0b00; /* increment */
-	dma_block_input.dest_address = (uintptr_t)&crypto_si32_config.base->DATAFIFO;
-	dma_block_input.dest_addr_adj = 0b10; /* no change */
+	/* Set up input (TX) DMA channel */
+	dma_block_tx.block_size = pkt->in_len;
+	dma_block_tx.source_address = (uintptr_t)pkt->in_buf;
+	dma_block_tx.source_addr_adj = 0b00; /* increment */
+	dma_block_tx.dest_address = (uintptr_t)&crypto_si32_config.base->DATAFIFO;
+	dma_block_tx.dest_addr_adj = 0b10; /* no change */
 
-	struct dma_config dma_config_input = {
+	struct dma_config dma_config_tx = {
 		.channel_direction = MEMORY_TO_PERIPHERAL,
 		.source_data_size = 4, /* SiM3x1xx limitation: must match dest_data_size */
 		.dest_data_size = 4,   /* DATAFIFO must be written to in word chunks (4 bytes) */
-		.source_burst_length = 16,
-		.dest_burst_length = 16,
+		.source_burst_length = AES_BLOCK_SIZE,
+		.dest_burst_length = AES_BLOCK_SIZE,
 		.block_count = 1,
-		.head_block = &dma_block_input,
-		.dma_callback = crypto_si32_dma_completed,
+		.head_block = &dma_block_tx,
+		.dma_callback = NULL,
 	};
 
-	ret = dma_config(dma, DMA_CHANNEL_ID_INPUT, &dma_config_input);
+	ret = dma_config(dma, DMA_CHANNEL_ID_TX, &dma_config_tx);
 	if (ret) {
-		LOG_ERR("Input DMA channel setup failed: %d", ret);
+		LOG_ERR("TX DMA channel setup failed: %d", ret);
 		return ret;
 	}
 
-	/* Set up output DMA channel */
-	dma_block_output.block_size = pkt->in_len;
-	dma_block_output.source_address = (uintptr_t)&crypto_si32_config.base->DATAFIFO;
-	dma_block_output.source_addr_adj = 0b10; /* no change */
-	dma_block_output.dest_address = (uintptr_t)pkt->out_buf;
-	dma_block_output.dest_addr_adj = 0b00; /* increment */
+	/* Set up output (RX) DMA channel */
+	dma_block_rx.block_size = pkt->in_len;
+	dma_block_rx.source_address = (uintptr_t)&crypto_si32_config.base->DATAFIFO;
+	dma_block_rx.source_addr_adj = 0b10; /* no change */
+	dma_block_rx.dest_address = (uintptr_t)pkt->out_buf;
+	dma_block_rx.dest_addr_adj = 0b00; /* increment */
 
-	struct dma_config dma_config_output = {
+	struct dma_config dma_config_rx = {
 		.channel_direction = PERIPHERAL_TO_MEMORY,
 		.source_data_size = 4, /* DATAFIFO must be read from in word chunks (4 bytes) */
 		.dest_data_size = 4,   /* SiM3x1xx limitation: must match source_data_size */
-		.source_burst_length = 16,
-		.dest_burst_length = 16,
+		.source_burst_length = AES_BLOCK_SIZE,
+		.dest_burst_length = AES_BLOCK_SIZE,
 		.block_count = 1,
-		.head_block = &dma_block_output,
+		.head_block = &dma_block_rx,
 		.dma_callback = crypto_si32_dma_completed,
 	};
 
-	ret = dma_config(dma, DMA_CHANNEL_ID_OUTPUT, &dma_config_output);
+	ret = dma_config(dma, DMA_CHANNEL_ID_RX, &dma_config_rx);
 	if (ret) {
-		LOG_ERR("Output DMA channel setup failed: %d", ret);
+		LOG_ERR("RX DMA channel setup failed: %d", ret);
 		return ret;
 	}
 
@@ -264,20 +274,19 @@ static int crypto_si32_aes_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt
 			(struct SI32_DMADESC_A_Struct *)SI32_DMACTRL_0->BASEPTR.U32;
 
 		/* As per 12.5.2. General DMA Transfer Setup, check input and output channel
-		 * programming */
-		assert_dma_settings_channel_input(d + DMA_CHANNEL_ID_INPUT, pkt);
-		assert_dma_settings_channel_output(d + DMA_CHANNEL_ID_OUTPUT, pkt);
+		 * programming
+		 */
+		assert_dma_settings_channel_tx(d + DMA_CHANNEL_ID_TX, pkt);
+		assert_dma_settings_channel_rx(d + DMA_CHANNEL_ID_RX, pkt);
 
 		/* Other checks */
-		__ASSERT(SI32_DMACTRL_A_is_channel_enabled(SI32_DMACTRL_0, DMA_CHANNEL_ID_INPUT),
+		__ASSERT(SI32_DMACTRL_A_is_channel_enabled(SI32_DMACTRL_0, DMA_CHANNEL_ID_RX),
 			 "The channel request mask (CHREQMCLR) must be cleared for the channel to "
-			 "use "
-			 "peripheral transfers.");
+			 "use peripheral transfers.");
 
-		__ASSERT(SI32_DMACTRL_A_is_channel_enabled(SI32_DMACTRL_0, DMA_CHANNEL_ID_OUTPUT),
+		__ASSERT(SI32_DMACTRL_A_is_channel_enabled(SI32_DMACTRL_0, DMA_CHANNEL_ID_RX),
 			 "The channel request mask (CHREQMCLR) must be cleared for the channel to "
-			 "use "
-			 "peripheral transfers.");
+			 "use peripheral transfers.");
 
 		__ASSERT(SI32_DMAXBAR_0->DMAXBAR0.CH5SEL == 0b0001,
 			 "0001: Service AES0 TX data requests.");
@@ -288,15 +297,15 @@ static int crypto_si32_aes_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt
 			 "Reset done during init, completed by now");
 	}
 
-	ret = dma_start(dma, DMA_CHANNEL_ID_INPUT);
+	ret = dma_start(dma, DMA_CHANNEL_ID_TX);
 	if (ret) {
-		LOG_ERR("Input DMA channel start failed: %d", ret);
+		LOG_ERR("TX DMA channel start failed: %d", ret);
 		return ret;
 	}
 
-	ret = dma_start(dma, DMA_CHANNEL_ID_OUTPUT);
+	ret = dma_start(dma, DMA_CHANNEL_ID_RX);
 	if (ret) {
-		LOG_ERR("Output DMA channel start failed: %d", ret);
+		LOG_ERR("RX DMA channel start failed: %d", ret);
 		return ret;
 	}
 
@@ -419,8 +428,6 @@ static int crypto_si32_begin_session(const struct device *dev, struct cipher_ctx
 				     const enum cipher_algo algo, const enum cipher_mode mode,
 				     const enum cipher_op op_type)
 {
-	struct crypto_si32_data *data = dev->data;
-
 	if (algo != CRYPTO_CIPHER_ALGO_AES) {
 		LOG_ERR("This driver supports only AES");
 		return -ENOTSUP;
@@ -451,7 +458,7 @@ static int crypto_si32_begin_session(const struct device *dev, struct cipher_ctx
 		return -EINVAL;
 	}
 
-	if (!atomic_cas(&data->session_in_use, 0, 1)) {
+	if (!atomic_cas(&session_in_use, 0, 1)) {
 		LOG_ERR("All session(s) in use");
 		return -EBUSY;
 	}
@@ -486,7 +493,7 @@ static int crypto_si32_free_session(const struct device *dev, struct cipher_ctx 
 
 	struct crypto_si32_data *data = dev->data;
 
-	if (!atomic_cas(&data->session_in_use, 1, 0)) {
+	if (!atomic_cas(&session_in_use, 1, 0)) {
 		LOG_ERR("Session not in use");
 		return -EINVAL;
 	}
@@ -501,5 +508,5 @@ static const struct crypto_driver_api crypto_si32_api = {
 	.query_hw_caps = crypto_si32_query_hw_caps,
 };
 
-DEVICE_DT_INST_DEFINE(0, crypto_si32_init, NULL, &crypto_si32_data, &crypto_si32_config,
-		      POST_KERNEL, CONFIG_CRYPTO_INIT_PRIORITY, &crypto_si32_api);
+DEVICE_DT_INST_DEFINE(0, crypto_si32_init, NULL, NULL, &crypto_si32_config, POST_KERNEL,
+		      CONFIG_CRYPTO_INIT_PRIORITY, &crypto_si32_api);
