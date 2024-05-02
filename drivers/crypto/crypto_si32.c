@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * Design decisions:
- *  - For DMA operations, the hardware requires 4 word aligned starting addresses of the input
- *    buffers. As this module has no control over its inputs, and copying data into aligned memory
- *    would require (potentially too) big buffers, this drivers uses the software mode (see
- *    chapter 12.10 in the reference manual).
+ *  - XXX
+ * Notes:
+ *  - If not noted otherwise, chaper numbers refer to the SiM3U1XX/SiM3C1XX reference manual
+ *    (SiM3U1xx-SiM3C1xx-RM.pdf, revision 1.0)
  */
 
 #define DT_DRV_COMPAT silabs_si32_aes
@@ -25,6 +25,8 @@ LOG_MODULE_REGISTER(aes_silabs_si32);
 
 #include <SI32_AES_A_Type.h>
 #include <SI32_CLKCTRL_A_Type.h>
+#include <SI32_DMACTRL_A_Type.h>
+#include "SI32_DMAXBAR_A_Type.h"
 #include <si32_device.h>
 
 #include <errno.h>
@@ -34,10 +36,13 @@ LOG_MODULE_REGISTER(aes_silabs_si32);
 
 #define DMA_CHANNEL_COUNT DT_PROP(DT_INST(0, silabs_si32_dma), dma_channels)
 
-BUILD_ASSERT(DT_INST_DMAS_CELL_BY_NAME(0, tx, channel) < DMA_CHANNEL_COUNT, "Too few DMA channels");
-BUILD_ASSERT(DT_INST_DMAS_CELL_BY_NAME(0, rx, channel) < DMA_CHANNEL_COUNT, "Too few DMA channels");
-BUILD_ASSERT(DT_INST_DMAS_CELL_BY_NAME(0, xor, channel) < DMA_CHANNEL_COUNT,
-	     "Too few DMA channels");
+#define DMA_CHANNEL_ID_INPUT  DT_INST_DMAS_CELL_BY_NAME(0, input, channel)
+#define DMA_CHANNEL_ID_OUTPUT DT_INST_DMAS_CELL_BY_NAME(0, output, channel)
+#define DMA_CHANNEL_ID_XOR    DT_INST_DMAS_CELL_BY_NAME(0, xor, channel)
+
+BUILD_ASSERT(DMA_CHANNEL_ID_INPUT < DMA_CHANNEL_COUNT, "Too few DMA channels");
+BUILD_ASSERT(DMA_CHANNEL_ID_OUTPUT < DMA_CHANNEL_COUNT, "Too few DMA channels");
+BUILD_ASSERT(DMA_CHANNEL_ID_XOR < DMA_CHANNEL_COUNT, "Too few DMA channels");
 
 struct crypto_si32_config {
 	SI32_AES_A_Type *base;
@@ -57,7 +62,7 @@ static struct crypto_si32_data crypto_si32_data;
 static void crypto_si32_dma_completed(const struct device *dev, void *user_data, uint32_t channel,
 				      int status)
 {
-	LOG_INF("AES0 finished work");
+	LOG_ERR("AES0 finished work");
 
 	return;
 }
@@ -78,9 +83,10 @@ static void crypto_si32_irq_error_handler(const struct device *dev)
 	 * overrun (XORF = 1) occurs.
 	 */
 	if (crypto_si32_config.base->STATUS.ERRI) {
-		LOG_ERR("ISR: FIFO overrun (%u), underrun (%u), XOR FIF overrun (%u)",
+		LOG_ERR("ISR: FIFO overrun (%u), underrun (%u), XOR FIF0 overrun (%u)",
 			crypto_si32_config.base->STATUS.DORF, crypto_si32_config.base->STATUS.DURF,
 			crypto_si32_config.base->STATUS.XORF);
+		SI32_AES_A_clear_error_interrupt(SI32_AES_0);
 	}
 }
 
@@ -91,6 +97,16 @@ static int crypto_si32_init(const struct device *dev)
 
 	__ASSERT(config->base == SI32_AES_0, "There is only one instance");
 	(void)config;
+
+	/* Enable clock for AES HW */
+	SI32_CLKCTRL_A_enable_apb_to_modules_0(SI32_CLKCTRL_0, SI32_CLKCTRL_A_APBCLKG0_AES0);
+
+	/* To use the AES0 module, firmware must first clear the RESET bit before initializing the
+	 * registers.
+	 */
+	SI32_AES_A_reset_module(crypto_si32_config.base);
+
+	__ASSERT(crypto_si32_config.base->CONTROL.RESET == 0, "Reset done");
 
 	/* 12.3. Interrupts: The completion interrupt should only be used in conjunction
 	 * with software mode (SWMDEN bit is set to 1) and not with DMA operations, where the DMA
@@ -111,14 +127,68 @@ static int crypto_si32_init(const struct device *dev)
 	/* Halt AES0 module on debug breakpoint */
 	SI32_AES_A_enable_stall_in_debug_mode(crypto_si32_config.base);
 
+	/* For peripheral transfers, firmware should configure the peripheral for the DMA transfer
+	 * and set the device’s DMA crossbar (DMAXBAR) to map a DMA channel to the peripheral.
+	 */
+	SI32_DMAXBAR_A_select_channel_peripheral(SI32_DMAXBAR_0, SI32_DMAXBAR_CHAN5_AES0_TX);
+	SI32_DMAXBAR_A_select_channel_peripheral(SI32_DMAXBAR_0, SI32_DMAXBAR_CHAN6_AES0_RX);
+
 	return 0;
+}
+
+static void assert_dma_settings_common(struct SI32_DMADESC_A_Struct *channel_descriptor)
+{
+	__ASSERT(channel_descriptor->CONFIG.SRCSIZE == 2,
+		 "Source size (SRCSIZE) and destination size (DSTSIZE) are 2 for a word transfer.");
+	__ASSERT(channel_descriptor->CONFIG.DSTSIZE == 2,
+		 "Source size (SRCSIZE) and destination size (DSTSIZE) are 2 for a word transfer.");
+	__ASSERT(channel_descriptor->CONFIG.RPOWER == 2,
+		 "RPOWER = 2 (4 data transfers per transaction).");
+}
+
+static void assert_dma_settings_channel_input(struct SI32_DMADESC_A_Struct *channel_descriptor,
+					      struct cipher_pkt *pkt)
+{
+	assert_dma_settings_common(channel_descriptor);
+
+	__ASSERT(channel_descriptor->CONFIG.SRCSIZE == 2,
+		 "Source size (SRCSIZE) and destination size (DSTSIZE) are 2 for a word transfer.");
+	__ASSERT(channel_descriptor->CONFIG.DSTSIZE == 2,
+		 "Source size (SRCSIZE) and destination size (DSTSIZE) are 2 for a word transfer.");
+	__ASSERT(channel_descriptor->CONFIG.RPOWER == 2,
+		 "RPOWER = 2 (4 data transfers per transaction).");
+	__ASSERT(channel_descriptor->DSTEND.U32 == (uintptr_t)&crypto_si32_config.base->DATAFIFO,
+		 "Destination end pointer set to the DATAFIFO register.");
+	__ASSERT(channel_descriptor->SRCEND.U32 == (uintptr_t)pkt->in_buf + pkt->in_len - 4,
+		 "Source end pointer set to the plain or cipher text input buffer address "
+		 "location + 16 x N – 4, where N is the number of blocks.");
+	__ASSERT(channel_descriptor->CONFIG.DSTAIMD == 0b11,
+		 "The DSTAIMD field should be set to 011b for no increment.");
+	__ASSERT(channel_descriptor->CONFIG.SRCAIMD == 0b10,
+		 "The SRCAIMD field should be set to 010b for word increments.");
+}
+
+static void assert_dma_settings_channel_output(struct SI32_DMADESC_A_Struct *channel_descriptor,
+					       struct cipher_pkt *pkt)
+{
+	assert_dma_settings_common(channel_descriptor);
+
+	__ASSERT(channel_descriptor->DSTEND.U32 == (uintptr_t)pkt->out_buf + pkt->in_len - 4,
+		 "Destination end pointer set to the plain or cipher text output buffer address "
+		 "location + 16 x N – 4, where N is the number of blocks.");
+	__ASSERT(channel_descriptor->SRCEND.U32 == (uintptr_t)&crypto_si32_config.base->DATAFIFO,
+		 "Source end pointer set to the DATAFIFO register.");
+	__ASSERT(channel_descriptor->CONFIG.DSTAIMD == 0b10,
+		 "The DSTAIMD field should be set to 010b for word increments.");
+	__ASSERT(channel_descriptor->CONFIG.SRCAIMD == 0b11,
+		 "The SRCAIMD field should be set to 011b for no increment.");
 }
 
 static int crypto_si32_aes_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 {
-	const struct crypto_si32_config *config = ctx->device->config;
 	struct dma_block_config dma_block_input = {0};
 	struct dma_block_config dma_block_output = {0};
+	const struct device *dma = DEVICE_DT_GET(DT_NODELABEL(dma));
 	int ret;
 
 	if (!pkt->in_len) {
@@ -136,6 +206,11 @@ static int crypto_si32_aes_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt
 		return -EINVAL;
 	}
 
+	if (ctx->keylen != 16) {
+		LOG_ERR("Only AES-128 implemented");
+		return -ENOSYS;
+	}
+
 	/* Set up input DMA channel */
 	dma_block_input.block_size = pkt->in_len;
 	dma_block_input.source_address = (uintptr_t)pkt->in_buf;
@@ -145,15 +220,16 @@ static int crypto_si32_aes_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt
 
 	struct dma_config dma_config_input = {
 		.channel_direction = MEMORY_TO_PERIPHERAL,
-		.source_data_size = 4, /* word sized reads */
-		.dest_data_size = 4,   /* DATAFIFO must be written word sized */
+		.source_data_size = 4, /* SiM3x1xx limitation: must match dest_data_size */
+		.dest_data_size = 4,   /* DATAFIFO must be written to in word chunks (4 bytes) */
+		.source_burst_length = 16,
+		.dest_burst_length = 16,
 		.block_count = 1,
 		.head_block = &dma_block_input,
 		.dma_callback = crypto_si32_dma_completed,
 	};
 
-	ret = dma_config(DEVICE_DT_GET(DT_NODELABEL(dma)),
-			 DT_INST_DMAS_CELL_BY_NAME(0, tx, channel), &dma_config_input);
+	ret = dma_config(dma, DMA_CHANNEL_ID_INPUT, &dma_config_input);
 	if (ret) {
 		LOG_ERR("Input DMA channel setup failed: %d", ret);
 		return ret;
@@ -168,117 +244,94 @@ static int crypto_si32_aes_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt
 
 	struct dma_config dma_config_output = {
 		.channel_direction = PERIPHERAL_TO_MEMORY,
-		.source_data_size = 4, /* DATAFIFO must be read word sized */
-		.dest_data_size = 4,   /* word sized reads */
+		.source_data_size = 4, /* DATAFIFO must be read from in word chunks (4 bytes) */
+		.dest_data_size = 4,   /* SiM3x1xx limitation: must match source_data_size */
+		.source_burst_length = 16,
+		.dest_burst_length = 16,
 		.block_count = 1,
 		.head_block = &dma_block_output,
 		.dma_callback = crypto_si32_dma_completed,
 	};
 
-	ret = dma_config(DEVICE_DT_GET(DT_NODELABEL(dma)),
-			 DT_INST_DMAS_CELL_BY_NAME(0, rx, channel), &dma_config_output);
+	ret = dma_config(dma, DMA_CHANNEL_ID_OUTPUT, &dma_config_output);
 	if (ret) {
 		LOG_ERR("Output DMA channel setup failed: %d", ret);
 		return ret;
 	}
 
-	__ASSERT(crypto_si32_config.base->CONTROL.ERRIEN == 1, "Error interrupt enabled");
+	if (IS_ENABLED(CONFIG_ASSERT)) {
+		struct SI32_DMADESC_A_Struct *d =
+			(struct SI32_DMADESC_A_Struct *)SI32_DMACTRL_0->BASEPTR.U32;
 
-	/* Enable clock for AES HW */
-	SI32_CLKCTRL_A_enable_apb_to_modules_0(SI32_CLKCTRL_0, SI32_CLKCTRL_A_APBCLKG0_AES0);
+		/* As per 12.5.2. General DMA Transfer Setup, check input and output channel
+		 * programming */
+		assert_dma_settings_channel_input(d + DMA_CHANNEL_ID_INPUT, pkt);
+		assert_dma_settings_channel_output(d + DMA_CHANNEL_ID_OUTPUT, pkt);
 
-	/* To use the AES0 module, firmware must first clear the RESET bit before initializing the
-	 * registers.
+		/* Other checks */
+		__ASSERT(SI32_DMACTRL_A_is_channel_enabled(SI32_DMACTRL_0, DMA_CHANNEL_ID_INPUT),
+			 "The channel request mask (CHREQMCLR) must be cleared for the channel to "
+			 "use "
+			 "peripheral transfers.");
+
+		__ASSERT(SI32_DMACTRL_A_is_channel_enabled(SI32_DMACTRL_0, DMA_CHANNEL_ID_OUTPUT),
+			 "The channel request mask (CHREQMCLR) must be cleared for the channel to "
+			 "use "
+			 "peripheral transfers.");
+
+		__ASSERT(SI32_DMAXBAR_0->DMAXBAR0.CH5SEL == 0b0001,
+			 "0001: Service AES0 TX data requests.");
+		__ASSERT(SI32_DMAXBAR_0->DMAXBAR0.CH6SEL == 0b0001,
+			 "0001: Service AES0 RX data requests.");
+
+		__ASSERT(crypto_si32_config.base->CONTROL.RESET == 0,
+			 "Reset done during init, completed by now");
+	}
+
+	ret = dma_start(dma, DMA_CHANNEL_ID_INPUT);
+	if (ret) {
+		LOG_ERR("Input DMA channel start failed: %d", ret);
+		return ret;
+	}
+
+	ret = dma_start(dma, DMA_CHANNEL_ID_OUTPUT);
+	if (ret) {
+		LOG_ERR("Output DMA channel start failed: %d", ret);
+		return ret;
+	}
+
+	/* 1. The XFRSIZE register should be set to N-1, where N is the number of 4-word blocks. */
+	SI32_AES_A_write_xfrsize(crypto_si32_config.base, pkt->in_len / AES_BLOCK_SIZE - 1);
+
+	/* 2. The HWKEYx registers should be written with the desired key in little endian format.
 	 */
-	SI32_AES_A_reset_module(crypto_si32_config.base);
-
-	/* Configure some settings valid for all (supported) operation modes */
-	__ASSERT(ctx->keylen == 16, "Only AES-128 supported");
-	SI32_AES_A_select_key_size_128(crypto_si32_config.base);
-
 	crypto_si32_config.base->HWKEY0.U32 = *((uint32_t *)ctx->key.bit_stream);
 	crypto_si32_config.base->HWKEY1.U32 = *((uint32_t *)ctx->key.bit_stream + 1);
 	crypto_si32_config.base->HWKEY2.U32 = *((uint32_t *)ctx->key.bit_stream + 2);
 	crypto_si32_config.base->HWKEY3.U32 = *((uint32_t *)ctx->key.bit_stream + 3);
 
-	/* XOR is needed for CTR only */
-	SI32_AES_A_select_xor_path_none(crypto_si32_config.base);
+	/* 3. The CONTROL register should be set as follows: */
+	{
+		__ASSERT(crypto_si32_config.base->CONTROL.ERRIEN == 1, "a. ERRIEN set to 1.");
+		/* b. KEYSIZE set to the appropriate number of bits for the key. */
+		SI32_AES_A_select_key_size_128(crypto_si32_config.base);
+		/* c. EDMD set to 1 for encryption. */
+		SI32_AES_A_select_encryption_mode(crypto_si32_config.base);
+		/* d. KEYCPEN set to 1 to enable key capture at the end of the transaction. */
+		SI32_AES_A_enable_key_capture(crypto_si32_config.base);
+		/* e. The HCBCEN, HCTREN, XOREN, BEN, SWMDEN bits should all be cleared to 0. */
+		SI32_AES_A_exit_cipher_block_chaining_mode(crypto_si32_config.base);
+		SI32_AES_A_exit_counter_mode(crypto_si32_config.base);
+		SI32_AES_A_select_xor_path_none(crypto_si32_config.base);
+		SI32_AES_A_exit_bypass_hardware_mode(crypto_si32_config.base);
+		SI32_AES_A_select_dma_mode(crypto_si32_config.base);
+	}
 
-	/* TODO: Explain */
-	SI32_AES_A_exit_bypass_hardware_mode(crypto_si32_config.base);
-	SI32_AES_A_exit_counter_mode(crypto_si32_config.base);
-	SI32_AES_A_enable_key_capture(crypto_si32_config.base);
-
-	/* TODO: Explain */
-	SI32_AES_A_write_xfrsize(crypto_si32_config.base, pkt->in_len / AES_BLOCK_SIZE - 1);
-	SI32_AES_A_select_dma_mode(crypto_si32_config.base);
-	SI32_AES_A_enable_error_interrupt(SI32_AES_0);
-	NVIC_ClearPendingIRQ(config->irq);
-	NVIC_EnableIRQ(config->irq);
-	/* TODO: Replace hardcoded IRQ */
-	NVIC_ClearPendingIRQ(DMACH6_IRQn);
-	NVIC_EnableIRQ(DMACH6_IRQn);
-	NVIC_ClearPendingIRQ(DMACH5_IRQn);
-	NVIC_EnableIRQ(DMACH5_IRQn);
-
-	// Set basePtr, cfr Table 6.1
-	// SI32_DMACTRL_A_write_baseptr(SI32_DMACTRL_0, (u32_t) & (dma_decs[0]));
-	// Enable DMA controller
-	// SI32_DMACTRL_A_enable_module(SI32_DMACTRL_0);
-
-	// /* As per "12.10. Using the AES0 Module in Software Mode" */
-
-	// /* 1. The RESET bit must be cleared to access the AES registers. */
-	// __ASSERT(crypto_si32_config.base->CONTROL.RESET == 0, "Reset done during init, completed
-	// by now");
-	// /* 2. Configure the operation, including setting SWMDEN to 1. */
-	// __ASSERT(crypto_si32_config.base->CONTROL.SWMDEN, "SW mode enabled during init");
-	// __ASSERT(crypto_si32_config.base->CONTROL.KEYSIZE == 00, "Keysize configured during
-	// init"); SI32_AES_A_select_encryption_mode(crypto_si32_config.base);
-	// SI32_AES_A_write_xfrsize(crypto_si32_config.base, 3);
-	// crypto_si32_config.base->HWKEY0.U32 = *((uint32_t *)ctx->key.bit_stream);
-	// crypto_si32_config.base->HWKEY1.U32 = *((uint32_t *)ctx->key.bit_stream + 1);
-	// crypto_si32_config.base->HWKEY2.U32 = *((uint32_t *)ctx->key.bit_stream + 2);
-	// crypto_si32_config.base->HWKEY3.U32 = *((uint32_t *)ctx->key.bit_stream + 3);
-	// SI32_AES_A_exit_cipher_block_chaining_mode(crypto_si32_config.base);
-	// SI32_AES_A_exit_counter_mode(crypto_si32_config.base);
-	// SI32_AES_A_select_xor_path_none(crypto_si32_config.base);
-	// SI32_AES_A_exit_bypass_hardware_mode(crypto_si32_config.base);
-	// /* 3. Load the input/output data FIFO (DATAFIFO) with four words. */
-	// __ASSERT(crypto_si32_config.base->STATUS.DFIFOLVL == 0, "Data FIFO empty");
-	// crypto_si32_config.base->DATAFIFO.U32 = *((uint32_t *)pkt->in_buf);
-	// crypto_si32_config.base->DATAFIFO.U32 = *((uint32_t *)pkt->in_buf + 1);
-	// crypto_si32_config.base->DATAFIFO.U32 = *((uint32_t *)pkt->in_buf + 2);
-	// crypto_si32_config.base->DATAFIFO.U32 = *((uint32_t *)pkt->in_buf + 3);
-	// __ASSERT(crypto_si32_config.base->STATUS.DFIFOLVL == 4, "Data FIFO full");
-	// /* 4. Load the XOR data FIFO (XORFIFO) with four words if XOREN is set to 01b or 10b. */
-	// __ASSERT(crypto_si32_config.base->CONTROL.XOREN == 0b00, "XOR disabled during init");
-	// /* 5. Set KEYCPEN to 1 if key capture is required (EDMD must also be set to 1 for the key
-	//  *    capture to occur)
-	//  */
-	// SI32_AES_A_enable_key_capture(crypto_si32_config.base);
-	// /* 6. Enable the operation complete interrupt by setting OCIEN to 1. Alternatively,
-	// firmware
-	//  *    can poll XFRSTA or BUSYF. */
-	// SI32_AES_A_disable_operation_complete_interrupt(crypto_si32_config.base);
-	// /* 7. Set XFRSTA to 1 to start the AES operation on the 4-word block. */
-	// SI32_AES_A_start_operation(crypto_si32_config.base);
-	// /* 8. Wait for the completion interrupt or poll until the operation completes. */
-	// while (crypto_si32_config.base->CONTROL.XFRSTA) {
-	// 	/* This bit is automatically cleared when the XFRSIZE register is 0 and the current
-	// 	 * operation completes.
-	// 	 */
-	// }
-	// /* 9. Read the input/output data FIFO (DATAFIFO) with four word reads to obtain the
-	//  * resulting cipher text output.
-	//  */
-	// *((uint32_t *)pkt->out_buf) = crypto_si32_config.base->DATAFIFO.U32;
-	// *((uint32_t *)pkt->out_buf + 1) = crypto_si32_config.base->DATAFIFO.U32;
-	// *((uint32_t *)pkt->out_buf + 2) = crypto_si32_config.base->DATAFIFO.U32;
-	// *((uint32_t *)pkt->out_buf + 3) = crypto_si32_config.base->DATAFIFO.U32;
-	// pkt->out_len = 16;
-
-	// __ASSERT(crypto_si32_config.base->STATUS.DFIFOLVL == 0, "Data FIFO empty again");
+	/* Once the DMA and AES settings have been set, the transfer should be started by writing 1
+	 * to the XFRSTA bit.
+	 */
+	SI32_AES_A_clear_operation_complete_interrupt(crypto_si32_config.base);
+	SI32_AES_A_start_operation(crypto_si32_config.base);
 
 	return 0;
 }
@@ -300,7 +353,7 @@ static int crypto_si32_aes_ecb_decrypt(struct cipher_ctx *ctx, struct cipher_pkt
 	 */
 	if (pkt->in_len > 16) {
 		LOG_ERR("Can't decrypt more than 1 block");
-		return -EINVAL;
+		return -ENOSYS;
 	}
 
 	if (pkt->out_buf_max < 16) {
@@ -308,60 +361,56 @@ static int crypto_si32_aes_ecb_decrypt(struct cipher_ctx *ctx, struct cipher_pkt
 		return -EINVAL;
 	}
 
-	__ASSERT(crypto_si32_config.base->CONTROL.ERRIEN == 1, "Error interrupt enabled");
+	// __ASSERT(crypto_si32_config.base->CONTROL.ERRIEN == 1, "Error interrupt enabled");
 
-	/* As per "12.10. Using the AES0 Module in Software Mode" */
+	// /* As per "12.10. Using the AES0 Module in Software Mode" */
 
-	/* 1. The RESET bit must be cleared to access the AES registers. */
-	__ASSERT(crypto_si32_config.base->CONTROL.RESET == 0,
-		 "Reset done during init, completed by now");
-	/* 2. Configure the operation, including setting SWMDEN to 1. */
-	__ASSERT(crypto_si32_config.base->CONTROL.SWMDEN, "SW mode enabled during init");
-	__ASSERT(crypto_si32_config.base->CONTROL.KEYSIZE == 00, "Keysize configured during init");
-	SI32_AES_A_select_decryption_mode(crypto_si32_config.base);
-	SI32_AES_A_write_xfrsize(crypto_si32_config.base, 3);
-	// crypto_si32_config.base->HWKEY0.U32 = *((uint32_t *)ctx->key.bit_stream);
-	// crypto_si32_config.base->HWKEY1.U32 = *((uint32_t *)ctx->key.bit_stream + 1);
-	// crypto_si32_config.base->HWKEY2.U32 = *((uint32_t *)ctx->key.bit_stream + 2);
-	// crypto_si32_config.base->HWKEY3.U32 = *((uint32_t *)ctx->key.bit_stream + 3);
-	SI32_AES_A_exit_cipher_block_chaining_mode(crypto_si32_config.base);
-	SI32_AES_A_exit_counter_mode(crypto_si32_config.base);
-	SI32_AES_A_select_xor_path_none(crypto_si32_config.base);
-	SI32_AES_A_exit_bypass_hardware_mode(crypto_si32_config.base);
-	/* 3. Load the input/output data FIFO (DATAFIFO) with four words. */
-	__ASSERT(crypto_si32_config.base->STATUS.DFIFOLVL == 0, "Data FIFO empty");
-	crypto_si32_config.base->DATAFIFO.U32 = *((uint32_t *)pkt->in_buf);
-	crypto_si32_config.base->DATAFIFO.U32 = *((uint32_t *)pkt->in_buf + 1);
-	crypto_si32_config.base->DATAFIFO.U32 = *((uint32_t *)pkt->in_buf + 2);
-	crypto_si32_config.base->DATAFIFO.U32 = *((uint32_t *)pkt->in_buf + 3);
-	__ASSERT(crypto_si32_config.base->STATUS.DFIFOLVL == 4, "Data FIFO full");
-	/* 4. Load the XOR data FIFO (XORFIFO) with four words if XOREN is set to 01b or 10b. */
-	__ASSERT(crypto_si32_config.base->CONTROL.XOREN == 0b00, "XOR disabled during init");
-	/* 5. Set KEYCPEN to 1 if key capture is required (EDMD must also be set to 1 for the key
-	 *    capture to occur)
-	 */
-	SI32_AES_A_disable_key_capture(crypto_si32_config.base);
-	/* 6. Enable the operation complete interrupt by setting OCIEN to 1. Alternatively, firmware
-	 *    can poll XFRSTA or BUSYF. */
-	SI32_AES_A_disable_operation_complete_interrupt(crypto_si32_config.base);
-	/* 7. Set XFRSTA to 1 to start the AES operation on the 4-word block. */
-	SI32_AES_A_start_operation(crypto_si32_config.base);
-	/* 8. Wait for the completion interrupt or poll until the operation completes. */
-	while (crypto_si32_config.base->CONTROL.XFRSTA) {
-		/* This bit is automatically cleared when the XFRSIZE register is 0 and the current
-		 * operation completes.
-		 */
-	}
-	/* 9. Read the input/output data FIFO (DATAFIFO) with four word reads to obtain the
-	 * resulting cipher text output.
-	 */
-	*((uint32_t *)pkt->out_buf) = crypto_si32_config.base->DATAFIFO.U32;
-	*((uint32_t *)pkt->out_buf + 1) = crypto_si32_config.base->DATAFIFO.U32;
-	*((uint32_t *)pkt->out_buf + 2) = crypto_si32_config.base->DATAFIFO.U32;
-	*((uint32_t *)pkt->out_buf + 3) = crypto_si32_config.base->DATAFIFO.U32;
-	pkt->out_len = 16;
+	// /* 1. The RESET bit must be cleared to access the AES registers. */
+	// __ASSERT(crypto_si32_config.base->CONTROL.RESET == 0,
+	// 	 "Reset done during init, completed by now");
+	// /* 2. Configure the operation, including setting SWMDEN to 1. */
+	// __ASSERT(crypto_si32_config.base->CONTROL.SWMDEN, "SW mode enabled during init");
+	// __ASSERT(crypto_si32_config.base->CONTROL.KEYSIZE == 00, "Keysize configured during
+	// init"); SI32_AES_A_select_decryption_mode(crypto_si32_config.base);
+	// SI32_AES_A_write_xfrsize(crypto_si32_config.base, 3);
+	// // crypto_si32_config.base->HWKEY0.U32 = *((uint32_t *)ctx->key.bit_stream);
+	// // crypto_si32_config.base->HWKEY1.U32 = *((uint32_t *)ctx->key.bit_stream + 1);
+	// // crypto_si32_config.base->HWKEY2.U32 = *((uint32_t *)ctx->key.bit_stream + 2);
+	// // crypto_si32_config.base->HWKEY3.U32 = *((uint32_t *)ctx->key.bit_stream + 3);
+	// SI32_AES_A_exit_cipher_block_chaining_mode(crypto_si32_config.base);
+	// SI32_AES_A_exit_counter_mode(crypto_si32_config.base);
+	// SI32_AES_A_select_xor_path_none(crypto_si32_config.base);
+	// SI32_AES_A_exit_bypass_hardware_mode(crypto_si32_config.base);
+	// /* 3. Load the input/output data FIFO (DATAFIFO) with four words. */
+	// __ASSERT(crypto_si32_config.base->STATUS.DFIFOLVL == 0, "Data FIFO empty");
+	// crypto_si32_config.base->DATAFIFO.U32 = *((uint32_t *)pkt->in_buf);
+	// crypto_si32_config.base->DATAFIFO.U32 = *((uint32_t *)pkt->in_buf + 1);
+	// crypto_si32_config.base->DATAFIFO.U32 = *((uint32_t *)pkt->in_buf + 2);
+	// crypto_si32_config.base->DATAFIFO.U32 = *((uint32_t *)pkt->in_buf + 3);
+	// __ASSERT(crypto_si32_config.base->STATUS.DFIFOLVL == 4, "Data FIFO full");
+	// /* 4. Load the XOR data FIFO (XORFIFO) with four words if XOREN is set to 01b or 10b. */
+	// __ASSERT(crypto_si32_config.base->CONTROL.XOREN == 0b00, "XOR disabled during init");
+	// /* 5. Set KEYCPEN to 1 if key capture is required (EDMD must also be set to 1 for the key
+	//  *    capture to occur)
+	//  */
+	// SI32_AES_A_disable_key_capture(crypto_si32_config.base);
+	// /* 6. Enable the operation complete interrupt by setting OCIEN to 1. Alternatively,
+	// firmware
+	//  *    can poll XFRSTA or BUSYF. */
+	// SI32_AES_A_disable_operation_complete_interrupt(crypto_si32_config.base);
+	// /* 7. Set XFRSTA to 1 to start the AES operation on the 4-word block. */
+	// SI32_AES_A_start_operation(crypto_si32_config.base);
 
-	__ASSERT(crypto_si32_config.base->STATUS.DFIFOLVL == 0, "Data FIFO empty again");
+	// /* 9. Read the input/output data FIFO (DATAFIFO) with four word reads to obtain the
+	//  * resulting cipher text output.
+	//  */
+	// *((uint32_t *)pkt->out_buf) = crypto_si32_config.base->DATAFIFO.U32;
+	// *((uint32_t *)pkt->out_buf + 1) = crypto_si32_config.base->DATAFIFO.U32;
+	// *((uint32_t *)pkt->out_buf + 2) = crypto_si32_config.base->DATAFIFO.U32;
+	// *((uint32_t *)pkt->out_buf + 3) = crypto_si32_config.base->DATAFIFO.U32;
+	// pkt->out_len = 16;
+
+	// __ASSERT(crypto_si32_config.base->STATUS.DFIFOLVL == 0, "Data FIFO empty again");
 
 	return 0;
 }
