@@ -64,9 +64,11 @@ static void crypto_si32_dma_completed(const struct device *dev, void *user_data,
 	switch (channel) {
 	case DMA_CHANNEL_ID_RX:
 		LOG_INF("AES0 RX DMA channel %s", result);
+		k_sem_give(&work_done);
 		break;
 	case DMA_CHANNEL_ID_TX:
 		LOG_INF("AES0 TX DMA channel %s", result);
+
 		break;
 	case DMA_CHANNEL_ID_XOR:
 		LOG_INF("AES0 XOR DMA channel %s", result);
@@ -336,11 +338,17 @@ static int crypto_si32_aes_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt
 		SI32_AES_A_select_dma_mode(crypto_si32_config.base);
 	}
 
+	k_sem_reset(&work_done);
+
 	/* Once the DMA and AES settings have been set, the transfer should be started by writing 1
 	 * to the XFRSTA bit.
 	 */
 	SI32_AES_A_clear_operation_complete_interrupt(crypto_si32_config.base);
 	SI32_AES_A_start_operation(crypto_si32_config.base);
+
+	k_sem_take(&work_done, K_FOREVER);
+
+	pkt->out_len = pkt->in_len;
 
 	return 0;
 }
@@ -431,8 +439,6 @@ static int crypto_si32_begin_session(const struct device *dev, struct cipher_ctx
 static int crypto_si32_free_session(const struct device *dev, struct cipher_ctx *ctx)
 {
 	ARG_UNUSED(ctx);
-
-	struct crypto_si32_data *data = dev->data;
 
 	if (!atomic_cas(&session_in_use, 1, 0)) {
 		LOG_ERR("Session not in use");
