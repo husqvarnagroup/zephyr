@@ -195,7 +195,7 @@ static void assert_dma_settings_channel_rx(struct SI32_DMADESC_A_Struct *channel
 		 "The SRCAIMD field should be set to 011b for no increment.");
 }
 
-static int crypto_si32_aes_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
+static int crypto_si32_dma_setup(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 {
 	struct dma_block_config dma_block_tx = {0};
 	struct dma_block_config dma_block_rx = {0};
@@ -311,6 +311,28 @@ static int crypto_si32_aes_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt
 		return ret;
 	}
 
+	return 0;
+}
+
+static int crypto_si32_aes_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
+{
+	int ret;
+
+	if (!ctx) {
+		LOG_WRN("Missing context");
+		return -EINVAL;
+	}
+
+	if (!ctx) {
+		LOG_WRN("Missing packet");
+		return -EINVAL;
+	}
+
+	ret = crypto_si32_dma_setup(ctx, pkt);
+	if (ret) {
+		return ret;
+	}
+
 	/* 1. The XFRSIZE register should be set to N-1, where N is the number of 4-word blocks. */
 	SI32_AES_A_write_xfrsize(crypto_si32_config.base, pkt->in_len / AES_BLOCK_SIZE - 1);
 
@@ -354,27 +376,62 @@ static int crypto_si32_aes_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt
 
 static int crypto_si32_aes_ecb_decrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 {
-	if (!pkt->in_len) {
-		LOG_WRN("Zero sized data");
-		return 0;
-	}
+	int ret;
 
-	if (pkt->in_len % 16) {
-		LOG_ERR("Data size must be 4-word aligned");
+	if (!ctx) {
+		LOG_WRN("Missing context");
 		return -EINVAL;
 	}
 
-	if (pkt->out_buf_max < pkt->in_len) {
-		LOG_ERR("Output buf too small");
+	if (!ctx) {
+		LOG_WRN("Missing packet");
 		return -EINVAL;
 	}
 
-	if (ctx->keylen != 16) {
-		LOG_ERR("Only AES-128 implemented");
-		return -ENOSYS;
+	ret = crypto_si32_dma_setup(ctx, pkt);
+	if (ret) {
+		return ret;
 	}
 
-	return -ENOSYS;
+	/* 1. The XFRSIZE register should be set to N-1, where N is the number of 4-word blocks. */
+	SI32_AES_A_write_xfrsize(crypto_si32_config.base, pkt->in_len / AES_BLOCK_SIZE - 1);
+
+	/* 2. The HWKEYx registers should be written with the desired key in little endian format.
+	 */
+	crypto_si32_config.base->HWKEY0.U32 = *((uint32_t *)ctx->key.bit_stream);
+	crypto_si32_config.base->HWKEY1.U32 = *((uint32_t *)ctx->key.bit_stream + 1);
+	crypto_si32_config.base->HWKEY2.U32 = *((uint32_t *)ctx->key.bit_stream + 2);
+	crypto_si32_config.base->HWKEY3.U32 = *((uint32_t *)ctx->key.bit_stream + 3);
+
+	/* 3. The CONTROL register should be set as follows: */
+	{
+		__ASSERT(crypto_si32_config.base->CONTROL.ERRIEN == 1, "a. ERRIEN set to 1.");
+		/* b. KEYSIZE set to the appropriate number of bits for the key. */
+		SI32_AES_A_select_key_size_128(crypto_si32_config.base);
+		/* c. EDMD set to 1 for encryption. */
+		SI32_AES_A_select_decryption_mode(crypto_si32_config.base);
+		/* d. KEYCPEN set to 1 to enable key capture at the end of the transaction. */
+		SI32_AES_A_enable_key_capture(crypto_si32_config.base);
+		/* e. The HCBCEN, HCTREN, XOREN, BEN, SWMDEN bits should all be cleared to 0. */
+		SI32_AES_A_exit_cipher_block_chaining_mode(crypto_si32_config.base);
+		SI32_AES_A_exit_counter_mode(crypto_si32_config.base);
+		SI32_AES_A_select_xor_path_none(crypto_si32_config.base);
+		SI32_AES_A_exit_bypass_hardware_mode(crypto_si32_config.base);
+		SI32_AES_A_select_dma_mode(crypto_si32_config.base);
+	}
+
+	k_sem_reset(&work_done);
+
+	/* Once the DMA and AES settings have been set, the transfer should be started by writing 1
+	 * to the XFRSTA bit.
+	 */
+	SI32_AES_A_clear_operation_complete_interrupt(crypto_si32_config.base);
+	SI32_AES_A_start_operation(crypto_si32_config.base);
+	k_sem_take(&work_done, K_FOREVER);
+
+	pkt->out_len = pkt->in_len;
+
+	return 0;
 }
 
 static int crypto_si32_begin_session(const struct device *dev, struct cipher_ctx *ctx,
