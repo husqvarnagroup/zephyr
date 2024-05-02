@@ -357,71 +357,12 @@ static int crypto_si32_aes_ecb_decrypt(struct cipher_ctx *ctx, struct cipher_pkt
 		return -EINVAL;
 	}
 
-	/* For security reasons, ECB mode should not be used to decrypt more than one block. Use CBC
-	 * mode instead.
-	 */
-	if (pkt->in_len > 16) {
-		LOG_ERR("Can't decrypt more than 1 block");
-		return -ENOSYS;
-	}
-
 	if (pkt->out_buf_max < 16) {
 		LOG_ERR("Output buf too small");
 		return -EINVAL;
 	}
 
-	// __ASSERT(crypto_si32_config.base->CONTROL.ERRIEN == 1, "Error interrupt enabled");
-
-	// /* As per "12.10. Using the AES0 Module in Software Mode" */
-
-	// /* 1. The RESET bit must be cleared to access the AES registers. */
-	// __ASSERT(crypto_si32_config.base->CONTROL.RESET == 0,
-	// 	 "Reset done during init, completed by now");
-	// /* 2. Configure the operation, including setting SWMDEN to 1. */
-	// __ASSERT(crypto_si32_config.base->CONTROL.SWMDEN, "SW mode enabled during init");
-	// __ASSERT(crypto_si32_config.base->CONTROL.KEYSIZE == 00, "Keysize configured during
-	// init"); SI32_AES_A_select_decryption_mode(crypto_si32_config.base);
-	// SI32_AES_A_write_xfrsize(crypto_si32_config.base, 3);
-	// // crypto_si32_config.base->HWKEY0.U32 = *((uint32_t *)ctx->key.bit_stream);
-	// // crypto_si32_config.base->HWKEY1.U32 = *((uint32_t *)ctx->key.bit_stream + 1);
-	// // crypto_si32_config.base->HWKEY2.U32 = *((uint32_t *)ctx->key.bit_stream + 2);
-	// // crypto_si32_config.base->HWKEY3.U32 = *((uint32_t *)ctx->key.bit_stream + 3);
-	// SI32_AES_A_exit_cipher_block_chaining_mode(crypto_si32_config.base);
-	// SI32_AES_A_exit_counter_mode(crypto_si32_config.base);
-	// SI32_AES_A_select_xor_path_none(crypto_si32_config.base);
-	// SI32_AES_A_exit_bypass_hardware_mode(crypto_si32_config.base);
-	// /* 3. Load the input/output data FIFO (DATAFIFO) with four words. */
-	// __ASSERT(crypto_si32_config.base->STATUS.DFIFOLVL == 0, "Data FIFO empty");
-	// crypto_si32_config.base->DATAFIFO.U32 = *((uint32_t *)pkt->in_buf);
-	// crypto_si32_config.base->DATAFIFO.U32 = *((uint32_t *)pkt->in_buf + 1);
-	// crypto_si32_config.base->DATAFIFO.U32 = *((uint32_t *)pkt->in_buf + 2);
-	// crypto_si32_config.base->DATAFIFO.U32 = *((uint32_t *)pkt->in_buf + 3);
-	// __ASSERT(crypto_si32_config.base->STATUS.DFIFOLVL == 4, "Data FIFO full");
-	// /* 4. Load the XOR data FIFO (XORFIFO) with four words if XOREN is set to 01b or 10b. */
-	// __ASSERT(crypto_si32_config.base->CONTROL.XOREN == 0b00, "XOR disabled during init");
-	// /* 5. Set KEYCPEN to 1 if key capture is required (EDMD must also be set to 1 for the key
-	//  *    capture to occur)
-	//  */
-	// SI32_AES_A_disable_key_capture(crypto_si32_config.base);
-	// /* 6. Enable the operation complete interrupt by setting OCIEN to 1. Alternatively,
-	// firmware
-	//  *    can poll XFRSTA or BUSYF. */
-	// SI32_AES_A_disable_operation_complete_interrupt(crypto_si32_config.base);
-	// /* 7. Set XFRSTA to 1 to start the AES operation on the 4-word block. */
-	// SI32_AES_A_start_operation(crypto_si32_config.base);
-
-	// /* 9. Read the input/output data FIFO (DATAFIFO) with four word reads to obtain the
-	//  * resulting cipher text output.
-	//  */
-	// *((uint32_t *)pkt->out_buf) = crypto_si32_config.base->DATAFIFO.U32;
-	// *((uint32_t *)pkt->out_buf + 1) = crypto_si32_config.base->DATAFIFO.U32;
-	// *((uint32_t *)pkt->out_buf + 2) = crypto_si32_config.base->DATAFIFO.U32;
-	// *((uint32_t *)pkt->out_buf + 3) = crypto_si32_config.base->DATAFIFO.U32;
-	// pkt->out_len = 16;
-
-	// __ASSERT(crypto_si32_config.base->STATUS.DFIFOLVL == 0, "Data FIFO empty again");
-
-	return 0;
+	return -ENOSYS;
 }
 
 static int crypto_si32_begin_session(const struct device *dev, struct cipher_ctx *ctx,
