@@ -68,9 +68,11 @@ static void dma_si32_isr_handler(uint8_t channel)
 			 "Result of success: Channel disabled");
 	}
 
-	if (cb) {
-		cb(DEVICE_DT_INST_GET(0), user_data, channel, result);
+	if (!cb) {
+		return;
 	}
+
+	cb(DEVICE_DT_INST_GET(0), user_data, channel, result);
 }
 
 #define DMA_SI32_IRQ_CONNECT(channel)                                                              \
@@ -78,7 +80,6 @@ static void dma_si32_isr_handler(uint8_t channel)
 		IRQ_CONNECT(DT_INST_IRQ_BY_IDX(0, channel, irq),                                   \
 			    DT_INST_IRQ_BY_IDX(0, channel, priority), dma_si32_isr_handler,        \
 			    channel, 0);                                                           \
-		irq_enable(DT_INST_IRQ_BY_IDX(0, channel, irq));                                   \
 	} while (false)
 
 #define DMA_SI32_IRQ_CONNECT_GEN(i, _) DMA_SI32_IRQ_CONNECT(i);
@@ -123,6 +124,7 @@ static int dma_si32_config(const struct device *dev, uint32_t channel, struct dm
 {
 	const struct dma_block_config *block;
 	struct SI32_DMADESC_A_Struct *channel_descriptor;
+	struct dma_si32_channel_data *channel_data;
 	uint32_t ncount;
 
 	LOG_INF("Configuring channel %" PRIu8, channel);
@@ -209,8 +211,9 @@ static int dma_si32_config(const struct device *dev, uint32_t channel, struct dm
 	}
 
 	/* Config is sane, start using it */
-	dam_si32_data.channel_data[channel].callback = cfg->dma_callback;
-	dam_si32_data.channel_data[channel].callback_user_data = cfg->user_data;
+	channel_data = &dam_si32_data.channel_data[channel];
+	channel_data->callback = cfg->dma_callback;
+	channel_data->callback_user_data = cfg->user_data;
 
 	switch (cfg->source_data_size) {
 	case 4:
@@ -265,9 +268,8 @@ static int dma_si32_config(const struct device *dev, uint32_t channel, struct dm
 		/* SiM3U1xx-SiM3C1xx-RM.pdf, 16.6.2. Auto-Request Transfers: This transfer type is
 		 * recommended for memory to memory transfers.
 		 */
-		dam_si32_data.channel_data[channel].TMD =
-			SI32_DMADESC_A_CONFIG_TMD_AUTO_REQUEST_VALUE;
-		dam_si32_data.channel_data[channel].memory_to_memory = 1;
+		channel_data->TMD = SI32_DMADESC_A_CONFIG_TMD_AUTO_REQUEST_VALUE;
+		channel_data->memory_to_memory = 1;
 		SI32_DMACTRL_A_disable_data_request(SI32_DMACTRL_0, channel);
 		break;
 	case 0b001: /* memory to peripheral */
@@ -275,8 +277,8 @@ static int dma_si32_config(const struct device *dev, uint32_t channel, struct dm
 		/* SiM3U1xx-SiM3C1xx-RM.pdf, 4.3.1. Basic Transfers: This transfer type is
 		 * recommended for peripheral-to-memory or memory-to-peripheral transfers.
 		 */
-		dam_si32_data.channel_data[channel].TMD = SI32_DMADESC_A_CONFIG_TMD_BASIC_VALUE;
-		dam_si32_data.channel_data[channel].memory_to_memory = 0;
+		channel_data->TMD = SI32_DMADESC_A_CONFIG_TMD_BASIC_VALUE;
+		channel_data->memory_to_memory = 0;
 		SI32_DMACTRL_A_enable_data_request(SI32_DMACTRL_0, channel);
 		break;
 	default: /* everything else is not (yet) supported */
@@ -327,63 +329,55 @@ static int dma_si32_config(const struct device *dev, uint32_t channel, struct dm
 static int dma_si32_start(const struct device *dev, uint32_t channel)
 {
 	struct SI32_DMADESC_A_Struct *channel_desc = &channel_descriptors[channel];
+	struct dma_si32_channel_data *channel_data;
+
+	LOG_INF("Starting channel %" PRIu8, channel);
 
 	if (channel >= CHANNEL_COUNT) {
 		LOG_ERR("Invalid channel (id %" PRIu32 ", have %d)", channel, CHANNEL_COUNT);
 		return -EINVAL;
 	}
 
+	channel_data = &dam_si32_data.channel_data[channel];
+
 	if (dev == NULL) {
 		LOG_ERR("Missing device");
 		return -EINVAL;
 	}
 
-	/* As per "5. Using the DMA for a Memory-to-Memory Transfer" */
+	/* All of this should be set by our own, previously running code. During development
+	 * however, it is still usefull to double check here.
+	 */
 	__ASSERT(SI32_CLKCTRL_0->AHBCLKG.DMACEN,
-		 "1. Enable the AHB and APB clocks to the DMA controller.");
-	__ASSERT(SI32_DMACTRL_A_is_enabled(SI32_DMACTRL_0),
-		 "2. Enable the DMA module (DMAEN = 1).");
+		 "AHB clock to the DMA controller must be enabled.");
+	__ASSERT(SI32_DMACTRL_A_is_enabled(SI32_DMACTRL_0), "DMA controller must be enabled.");
 	__ASSERT(SI32_DMACTRL_0->BASEPTR.U32 == (uintptr_t)channel_descriptors,
-		 "3. Set the address location of the channel transfer descriptors (BASEPTR)");
+		 "Address location of the channel transfer descriptors (BASEPTR) must be set.");
 	__ASSERT(SI32_DMACTRL_A_is_primary_selected(SI32_DMACTRL_0, channel),
-		 "4. Use the CHALTCLR register to set the channel to use the primary descriptor");
-	/* 5. Create the primary descriptor in memory for the desired transfer ... */
-	// __ASSERT(channel_desc->SRCEND.U32,
-	// 	 "a. Set the SRCEND field to the last address of the source data.");
-	// __ASSERT(channel_desc->DSTEND.U32,
-	// 	 "b. Set the DSTEND field to the last address of the destination memory.");
-	// __ASSERT(channel_desc->CONFIG.DSTAIMD == channel_desc->CONFIG.SRCAIMD,
-	// 	 "c. Set the destination and source address increment modes (DSTAIMD and "
-	// 	 "SRCAIMD). In most cases, these values should be the same");
-	// __ASSERT(channel_desc->CONFIG.DSTSIZE == 0,
-	// 	 "d. Set the destination and source data size (DSTSIZE and SRCSIZE) to the "
-	// 	 "same value.");
-	// __ASSERT(channel_desc->CONFIG.SRCSIZE == 0,
-	// 	 "d. Set the destination and source data size (DSTSIZE and SRCSIZE) to the "
-	// 	 "same value.");
-	// __ASSERT(channel_desc->CONFIG.RPOWER == 0,
-	// 	 "e. Set the RPOWER to the desired number of data transfers between "
-	// 	 "rearbitration. In most cases, this value can be 0.");
-	// __ASSERT(channel_desc->CONFIG.NCOUNT == 47,
-	// 	 "f. Set the NCOUNT field to the total number of transfers minus 1.");
-	channel_desc->CONFIG.TMD = dam_si32_data.channel_data[channel].TMD;
-	// __ASSERT(channel_desc->CONFIG.TMD == 2,
-	// 	 "g. Set the transfer mode to the auto-request type (TMD = 2).");
-	// __ASSERT(SI32_DMACTRL_0->CHREQMSET.U32 & BIT(channel),
-	// 	 "6. Disable data requests for the channel using the CHREQMSET register.");
-	__ASSERT(SI32_SCONFIG_0->CONFIG.FDMAEN,
-		 "7. Set the DMA to fast mode using the FDMAEN bit in the SCONFIG module.");
-	__ASSERT(SI32_DMACTRL_0->CHENSET.U32 & BIT(channel),
-		 "8. Enable the DMA channel using the CHENSET register.");
-	/* 9. (Optional) Enable the DMA channel interrupt. */
+		 "Primary descriptors must be used for basic and auto-request operations.");
+	__ASSERT(SI32_SCONFIG_0->CONFIG.FDMAEN, "Fast mode is recommened to be enabled.");
+	__ASSERT(SI32_DMACTRL_0->CHENSET.U32 & BIT(channel), "Channel must be enabled.");
+	__ASSERT(SI32_DMACTRL_0->CHSTATUS.U32 & BIT(channel),
+		 "Channel must be waiting for request");
+
+	channel_desc->CONFIG.TMD = channel_data->TMD;
+
+	/* Get rid of potentially lingering bus errors. */
+	SI32_DMACTRL_A_clear_bus_error(SI32_DMACTRL_0);
+
+	/* Enable interrupt for this DMA channels. */
 	irq_enable(DMACH0_IRQn + channel);
 
-	/* memory-to-memory transfers need to be started here. When peripherals are involved, the
-	 * caller has to enable the peripheral to start the transfer.
+	/* memory-to-memory transfers have to be started by this driver. When peripherals are
+	 * involved, the caller has to enable the peripheral to start the transfer.
 	 */
 	if (dam_si32_data.channel_data[channel].memory_to_memory) {
-		LOG_DBG("Generate SW request for channel %" PRIu32, channel);
+		__ASSERT((SI32_DMACTRL_0->CHREQMSET.U32 & BIT(channel)),
+			 "Peripheral data requests for the channel must be disabled");
 		SI32_DMACTRL_A_generate_software_request(SI32_DMACTRL_0, channel);
+	} else {
+		__ASSERT(!(SI32_DMACTRL_0->CHREQMSET.U32 & BIT(channel)),
+			 "Data requests for the channel must be enabled");
 	}
 
 	return 0;
@@ -403,7 +397,7 @@ static int dma_si32_stop(const struct device *dev, uint32_t channel)
 
 	irq_disable(DMACH0_IRQn + channel);
 
-	channel_descriptors[channel].CONFIG.TMD = 0;
+	channel_descriptors[channel].CONFIG.TMD = 0; /* Stop the DMA channel. */
 
 	return 0;
 }
