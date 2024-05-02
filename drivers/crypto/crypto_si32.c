@@ -345,7 +345,6 @@ static int crypto_si32_aes_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt
 	 */
 	SI32_AES_A_clear_operation_complete_interrupt(crypto_si32_config.base);
 	SI32_AES_A_start_operation(crypto_si32_config.base);
-
 	k_sem_take(&work_done, K_FOREVER);
 
 	pkt->out_len = pkt->in_len;
@@ -365,9 +364,14 @@ static int crypto_si32_aes_ecb_decrypt(struct cipher_ctx *ctx, struct cipher_pkt
 		return -EINVAL;
 	}
 
-	if (pkt->out_buf_max < 16) {
+	if (pkt->out_buf_max < pkt->in_len) {
 		LOG_ERR("Output buf too small");
 		return -EINVAL;
+	}
+
+	if (ctx->keylen != 16) {
+		LOG_ERR("Only AES-128 implemented");
+		return -ENOSYS;
 	}
 
 	return -ENOSYS;
