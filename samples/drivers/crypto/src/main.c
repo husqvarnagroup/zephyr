@@ -636,6 +636,16 @@ int main(void)
 
 	LOG_INF("Cipher Sample");
 
+	if(IS_ENABLED(CONFIG_SPEED_OPTIMIZATIONS)) {
+		printk("Speed optimized build with driver %s: \n", dev->name);
+	} else if(IS_ENABLED(CONFIG_SIZE_OPTIMIZATIONS)) {
+		printk("Size optimized build with driver %s: \n", dev->name);
+	} else if(IS_ENABLED(CONFIG_DEBUG_OPTIMIZATIONS)) {
+		printk("Debug optimized build with driver %s: \n", dev->name);
+	} else if(IS_ENABLED(CONFIG_NO_OPTIMIZATIONS)) {
+		printk("Unoptimized build with driver %s: \n", dev->name);
+	}
+
 	for (i = 0; modes[i].mode; i++) {
 		LOG_INF("%s", modes[i].mode);
 		start_time = timing_counter_get();
