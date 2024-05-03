@@ -63,15 +63,14 @@ static void crypto_si32_dma_completed(const struct device *dev, void *user_data,
 
 	switch (channel) {
 	case DMA_CHANNEL_ID_RX:
-		LOG_INF("AES0 RX DMA channel %s", result);
+		LOG_DBG("AES0 RX DMA channel %s", result);
 		k_sem_give(&work_done);
 		break;
 	case DMA_CHANNEL_ID_TX:
-		LOG_INF("AES0 TX DMA channel %s", result);
-
+		LOG_DBG("AES0 TX DMA channel %s", result);
 		break;
 	case DMA_CHANNEL_ID_XOR:
-		LOG_INF("AES0 XOR DMA channel %s", result);
+		LOG_DBG("AES0 XOR DMA channel %s", result);
 		break;
 	}
 
@@ -197,6 +196,8 @@ static void assert_dma_settings_channel_rx(struct SI32_DMADESC_A_Struct *channel
 
 static int crypto_si32_dma_setup(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 {
+	ARG_UNUSED(ctx);
+
 	struct dma_block_config dma_block_tx = {0};
 	struct dma_block_config dma_block_rx = {0};
 	const struct device *dma = DEVICE_DT_GET(DT_NODELABEL(dma));
@@ -232,7 +233,7 @@ static int crypto_si32_dma_setup(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 		.dest_burst_length = AES_BLOCK_SIZE,
 		.block_count = 1,
 		.head_block = &dma_block_tx,
-		.dma_callback = NULL,
+		.dma_callback = crypto_si32_dma_completed,
 	};
 
 	ret = dma_config(dma, DMA_CHANNEL_ID_TX, &dma_config_tx);
@@ -308,6 +309,7 @@ static int crypto_si32_dma_setup(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 	return 0;
 }
 
+/* Measured as of 2024-05-03, this takes ~600 cycles to complete (without logging) */
 static int crypto_si32_aes_generate_decryption_key(void)
 {
 	LOG_INF("Generating decryption key");
@@ -338,7 +340,8 @@ static int crypto_si32_aes_generate_decryption_key(void)
 	return 0;
 }
 
-static int crypto_si32_aes_ecb_op(struct cipher_ctx *ctx, struct cipher_pkt *pkt, enum cipher_op op)
+static int crypto_si32_aes_op(struct cipher_ctx *ctx, struct cipher_pkt *pkt,
+			      const enum cipher_op op, const enum cipher_mode cm, const uint8_t *iv)
 {
 	int ret;
 
@@ -392,10 +395,26 @@ static int crypto_si32_aes_ecb_op(struct cipher_ctx *ctx, struct cipher_pkt *pkt
 		}
 		/* d. KEYCPEN set to 1 to enable key capture at the end of the transaction. */
 		SI32_AES_A_enable_key_capture(crypto_si32_config.base);
-		/* e. The HCBCEN, HCTREN, XOREN, BEN, SWMDEN bits should all be cleared to 0. */
-		SI32_AES_A_exit_cipher_block_chaining_mode(crypto_si32_config.base);
+
+		if (cm == CRYPTO_CIPHER_MODE_ECB) {
+			/* ECB: e. The HCBCEN, HCTREN, XOREN, BEN, SWMDEN bits should all be cleared
+			 * to 0. */
+			SI32_AES_A_select_xor_path_none(crypto_si32_config.base);
+			SI32_AES_A_exit_cipher_block_chaining_mode(crypto_si32_config.base);
+		} else {
+			__ASSERT(cm == CRYPTO_CIPHER_MODE_CBC, "Must be CBC");
+			/* c. XOREN bits set to 01b to enable the XOR input path. */
+			SI32_AES_A_select_xor_path_output(crypto_si32_config.base);
+			/* f. HCBCEN set to 1 to enable Hardware Cipher Block Chaining mode. */
+			SI32_AES_A_enter_cipher_block_chaining_mode(crypto_si32_config.base);
+			/* Initialization vector should be initialized to the HWCTRx registers */
+			crypto_si32_config.base->HWCTR0.U32 = *((uint32_t *)iv);
+			crypto_si32_config.base->HWCTR1.U32 = *((uint32_t *)iv + 1);
+			crypto_si32_config.base->HWCTR2.U32 = *((uint32_t *)iv + 2);
+			crypto_si32_config.base->HWCTR3.U32 = *((uint32_t *)iv + 3);
+		}
+		/* CBC and ECB: g. The HCTREN, BEN, SWMDEN bits should all be cleared to 0. */
 		SI32_AES_A_exit_counter_mode(crypto_si32_config.base);
-		SI32_AES_A_select_xor_path_none(crypto_si32_config.base);
 		SI32_AES_A_exit_bypass_hardware_mode(crypto_si32_config.base);
 		SI32_AES_A_select_dma_mode(crypto_si32_config.base);
 	}
@@ -407,7 +426,10 @@ static int crypto_si32_aes_ecb_op(struct cipher_ctx *ctx, struct cipher_pkt *pkt
 	 */
 	SI32_AES_A_clear_operation_complete_interrupt(crypto_si32_config.base);
 	SI32_AES_A_start_operation(crypto_si32_config.base);
-	k_sem_take(&work_done, K_FOREVER);
+
+	if (k_sem_take(&work_done, Z_TIMEOUT_MS(10))) {
+		return -EIO;
+	}
 
 	pkt->out_len = pkt->in_len;
 
@@ -416,18 +438,30 @@ static int crypto_si32_aes_ecb_op(struct cipher_ctx *ctx, struct cipher_pkt *pkt
 
 static int crypto_si32_aes_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 {
-	return crypto_si32_aes_ecb_op(ctx, pkt, CRYPTO_CIPHER_OP_ENCRYPT);
+	return crypto_si32_aes_op(ctx, pkt, CRYPTO_CIPHER_OP_ENCRYPT, CRYPTO_CIPHER_MODE_ECB, NULL);
 }
 
 static int crypto_si32_aes_ecb_decrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 {
-	return crypto_si32_aes_ecb_op(ctx, pkt, CRYPTO_CIPHER_OP_DECRYPT);
+	return crypto_si32_aes_op(ctx, pkt, CRYPTO_CIPHER_OP_DECRYPT, CRYPTO_CIPHER_MODE_ECB, NULL);
+}
+
+static int crypto_si32_aes_cbc_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *iv)
+{
+	return crypto_si32_aes_op(ctx, pkt, CRYPTO_CIPHER_OP_ENCRYPT, CRYPTO_CIPHER_MODE_CBC, iv);
+}
+
+static int crypto_si32_aes_cbc_decrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *iv)
+{
+	return crypto_si32_aes_op(ctx, pkt, CRYPTO_CIPHER_OP_DECRYPT, CRYPTO_CIPHER_MODE_CBC, iv);
 }
 
 static int crypto_si32_begin_session(const struct device *dev, struct cipher_ctx *ctx,
 				     const enum cipher_algo algo, const enum cipher_mode mode,
 				     const enum cipher_op op_type)
 {
+	ARG_UNUSED(dev);
+
 	if (algo != CRYPTO_CIPHER_ALGO_AES) {
 		LOG_ERR("This driver supports only AES");
 		return -ENOTSUP;
@@ -448,11 +482,6 @@ static int crypto_si32_begin_session(const struct device *dev, struct cipher_ctx
 		return -EINVAL;
 	}
 
-	if (mode != CRYPTO_CIPHER_MODE_ECB) {
-		LOG_ERR("Unsupported mode");
-		return -ENOTSUP;
-	}
-
 	if (ctx->key.bit_stream == NULL) {
 		LOG_ERR("No key provided");
 		return -EINVAL;
@@ -469,22 +498,30 @@ static int crypto_si32_begin_session(const struct device *dev, struct cipher_ctx
 		case CRYPTO_CIPHER_MODE_ECB:
 			ctx->ops.block_crypt_hndlr = crypto_si32_aes_ecb_encrypt;
 			return 0;
+		case CRYPTO_CIPHER_MODE_CBC:
+			ctx->ops.cbc_crypt_hndlr = crypto_si32_aes_cbc_encrypt;
+			return 0;
 		default:
-			break;
+			LOG_ERR("Unsupported encryption mode: %d", mode);
 		}
 	case CRYPTO_CIPHER_OP_DECRYPT:
 		switch (mode) {
 		case CRYPTO_CIPHER_MODE_ECB:
 			ctx->ops.block_crypt_hndlr = crypto_si32_aes_ecb_decrypt;
 			return 0;
+		case CRYPTO_CIPHER_MODE_CBC:
+			ctx->ops.cbc_crypt_hndlr = crypto_si32_aes_cbc_decrypt;
+			return 0;
 		default:
-			break;
+			LOG_ERR("Unsupported decryption mode: %d", mode);
 		}
 	default:
-		break;
+		LOG_ERR("Unsupported op type: %d", mode);
 	}
 
-	return -ENOTSUP;
+	atomic_cas(&session_in_use, 1, 0);
+
+	return -ENOSYS;
 }
 
 static int crypto_si32_free_session(const struct device *dev, struct cipher_ctx *ctx)
