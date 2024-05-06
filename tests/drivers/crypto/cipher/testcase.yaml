@@ -1,0 +1,20 @@
+# Copyright (c) 2024 GARDENA GmbH
+#
+# SPDX-License-Identifier: Apache-2.0
+
+common:
+  tags: crypto
+  min_ram: 32
+tests:
+  drivers.crypto.cipher:
+    filter: dt_nodelabel_enabled("crypto")
+  drivers.crypto.cipher.tinycrypt:
+    extra_args: EXTRA_CONF_FILE=overlay-tinycrypt-shim.conf
+    integration_platforms:
+      - native_sim
+      - native_sim/native/64
+  drivers.crypto.cipher.mbedtls:
+    extra_args: EXTRA_CONF_FILE=overlay-mbedtls-shim.conf
+    integration_platforms:
+      - native_sim
+      - native_sim/native/64
