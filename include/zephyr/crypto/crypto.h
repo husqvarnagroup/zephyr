@@ -62,6 +62,9 @@
 /** Don't prefix IV to cipher blocks */
 #define CAP_NO_IV_PREFIX		BIT(8)
 
+/** Whether the hardware/driver supports custom initial AES-CTR counter values */
+#define CAP_AES_CTR_CUSTOM_COUNTER_INIT	BIT(9)
+
 /* More flags to be added as necessary */
 
 /** @brief Crypto driver API definition. */
