@@ -13,6 +13,7 @@
 #include <zephyr/init.h>
 #include <errno.h>
 #include <zephyr/crypto/crypto.h>
+#include <zephyr/sys/byteorder.h>
 
 #if !defined(CONFIG_MBEDTLS_CFG_FILE)
 #include "mbedtls/config.h"
@@ -32,7 +33,7 @@
 #include <mbedtls/sha512.h>
 
 #define MTLS_SUPPORT (CAP_RAW_KEY | CAP_INPLACE_OPS | CAP_SEPARATE_IO_BUFS | CAP_SYNC_OPS | \
-		      CAP_NO_IV_PREFIX)
+		      CAP_NO_IV_PREFIX | CAP_AES_CTR_CUSTOM_COUNTER_INIT)
 
 #define LOG_LEVEL CONFIG_CRYPTO_LOG_LEVEL
 #include <zephyr/logging/log.h>
@@ -50,6 +51,9 @@ struct mtls_shim_session {
 		mbedtls_sha256_context mtls_sha256;
 		mbedtls_sha512_context mtls_sha512;
 	};
+#ifdef CONFIG_MBEDTLS_CIPHER_MODE_CTR_ENABLED
+	uint8_t mtls_ctr_current_counter[4];
+#endif
 	bool in_use;
 	union {
 		enum cipher_mode mode;
@@ -208,6 +212,42 @@ int mtls_cbc_decrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *iv
 
 	return 0;
 }
+
+#ifdef CONFIG_MBEDTLS_CIPHER_MODE_CTR_ENABLED
+int mtls_ctr_op(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *iv)
+{
+	int ret;
+	size_t nc_off = 0;
+	unsigned char stream_block[16] = {0};
+	mbedtls_aes_context *crt_ctx = MTLS_GET_CTX(ctx, aes);
+	uint8_t *counter =
+		((struct mtls_shim_session *)ctx->drv_sessn_state)->mtls_ctr_current_counter;
+	uint8_t *out_buf;
+	uint8_t nonce[16];
+
+	memcpy(nonce, iv, 12);
+	memcpy(nonce + 12, counter, 4);
+
+	if (ctx->flags & CAP_INPLACE_OPS) {
+		out_buf = pkt->in_buf;
+	} else {
+		out_buf = pkt->out_buf;
+	}
+
+	ret = mbedtls_aes_crypt_ctr(crt_ctx, pkt->in_len, &nc_off, nonce, stream_block, pkt->in_buf,
+				    out_buf);
+	if (ret) {
+		LOG_ERR("Could not encrypt/decrypt (%d)", ret);
+		return -EINVAL;
+	}
+
+	memcpy(counter, nonce + 12, 4);
+
+	pkt->out_len = pkt->in_len;
+
+	return 0;
+}
+#endif
 
 #ifdef CONFIG_MBEDTLS_CIPHER_CCM_ENABLED
 static int mtls_ccm_encrypt_auth(struct cipher_ctx *ctx,
@@ -371,6 +411,9 @@ static int mtls_session_setup(const struct device *dev,
 	}
 
 	if (mode != CRYPTO_CIPHER_MODE_CBC &&
+#ifdef CONFIG_MBEDTLS_CIPHER_MODE_CTR_ENABLED
+	    mode != CRYPTO_CIPHER_MODE_CTR &&
+#endif
 #ifdef CONFIG_MBEDTLS_CIPHER_CCM_ENABLED
 	    mode != CRYPTO_CIPHER_MODE_CCM &&
 #endif
@@ -438,6 +481,26 @@ static int mtls_session_setup(const struct device *dev,
 			return -EINVAL;
 		}
 		break;
+#ifdef CONFIG_MBEDTLS_CIPHER_MODE_CTR_ENABLED
+	case CRYPTO_CIPHER_MODE_CTR:
+		if (ctx->mode_params.ctr_info.ctr_len != 32U) {
+			LOG_ERR("Only 32 bit counter supported");
+			mtls_sessions[ctx_idx].in_use = false;
+			return -ENOTSUP;
+		}
+		sys_put_be32(ctx->mode_params.ctr_info.ctr_initial_value,
+			     mtls_sessions[ctx_idx].mtls_ctr_current_counter);
+		aes_ctx = &mtls_sessions[ctx_idx].mtls_aes;
+		mbedtls_aes_init(aes_ctx);
+		ret = mbedtls_aes_setkey_enc(aes_ctx, ctx->key.bit_stream, ctx->keylen * 8U);
+		if (ret) {
+			LOG_ERR("AES_CTR: failed at setkey (%d)", ret);
+			mtls_sessions[ctx_idx].in_use = false;
+			return -EINVAL;
+		}
+		ctx->ops.ctr_crypt_hndlr = mtls_ctr_op;
+		break;
+#endif /* CONFIG_MBEDTLS_CIPHER_MODE_CTR_ENABLED */
 #ifdef CONFIG_MBEDTLS_CIPHER_CCM_ENABLED
 	case CRYPTO_CIPHER_MODE_CCM:
 		ccm_ctx = &mtls_sessions[ctx_idx].mtls_ccm;
