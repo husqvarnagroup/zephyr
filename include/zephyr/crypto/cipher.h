@@ -94,6 +94,11 @@ struct ctr_params {
 	 * such that ivlen + ctr_len = keylen
 	 */
 	uint32_t ctr_len;
+	/** Initial counter value.
+	 *
+	 *  CAP_AES_CTR_CUSTOM_COUNTER_INIT bit set if supported by hardware/driver.
+	 */
+	uint32_t ctr_initial_value;
 };
 
 struct gcm_params {
