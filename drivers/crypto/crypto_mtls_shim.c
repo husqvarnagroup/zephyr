@@ -31,7 +31,7 @@
 #include <mbedtls/sha256.h>
 #include <mbedtls/sha512.h>
 
-#define MTLS_SUPPORT (CAP_RAW_KEY | CAP_SEPARATE_IO_BUFS | CAP_SYNC_OPS | \
+#define MTLS_SUPPORT (CAP_RAW_KEY | CAP_INPLACE_OPS | CAP_SEPARATE_IO_BUFS | CAP_SYNC_OPS | \
 		      CAP_NO_IV_PREFIX)
 
 #define LOG_LEVEL CONFIG_CRYPTO_LOG_LEVEL
@@ -77,6 +77,7 @@ int mtls_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 {
 	int ret;
 	mbedtls_aes_context *ecb_ctx = MTLS_GET_CTX(ctx, aes);
+	uint8_t *out_buf;
 
 	/* For security reasons, ECB mode should not be used to encrypt
 	 * more than one block. Use CBC mode instead.
@@ -86,8 +87,14 @@ int mtls_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 		return -EINVAL;
 	}
 
+	if (ctx->flags & CAP_INPLACE_OPS) {
+		out_buf = pkt->in_buf;
+	} else {
+		out_buf = pkt->out_buf;
+	}
+
 	ret = mbedtls_aes_crypt_ecb(ecb_ctx, MBEDTLS_AES_ENCRYPT,
-				    pkt->in_buf, pkt->out_buf);
+				    pkt->in_buf, out_buf);
 	if (ret) {
 		LOG_ERR("Could not encrypt (%d)", ret);
 		return -EINVAL;
@@ -102,6 +109,7 @@ int mtls_ecb_decrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 {
 	int ret;
 	mbedtls_aes_context *ecb_ctx = MTLS_GET_CTX(ctx, aes);
+	uint8_t *out_buf;
 
 	/* For security reasons, ECB mode should not be used to decrypt
 	 * more than one block. Use CBC mode instead.
@@ -111,8 +119,14 @@ int mtls_ecb_decrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 		return -EINVAL;
 	}
 
+	if (ctx->flags & CAP_INPLACE_OPS) {
+		out_buf = pkt->in_buf;
+	} else {
+		out_buf = pkt->out_buf;
+	}
+
 	ret = mbedtls_aes_crypt_ecb(ecb_ctx, MBEDTLS_AES_DECRYPT,
-				    pkt->in_buf, pkt->out_buf);
+				    pkt->in_buf, out_buf);
 	if (ret) {
 		LOG_ERR("Could not encrypt (%d)", ret);
 		return -EINVAL;
@@ -128,6 +142,7 @@ int mtls_cbc_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *iv
 	int ret, iv_bytes;
 	uint8_t *p_iv, iv_loc[16];
 	mbedtls_aes_context *cbc_ctx = MTLS_GET_CTX(ctx, aes);
+	uint8_t *out_buf;
 
 	if ((ctx->flags & CAP_NO_IV_PREFIX) == 0U) {
 		/* Prefix IV to ciphertext, which is default behavior of Zephyr
@@ -142,8 +157,14 @@ int mtls_cbc_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *iv
 		p_iv = iv_loc;
 	}
 
+	if (ctx->flags & CAP_INPLACE_OPS) {
+		out_buf = pkt->in_buf;
+	} else {
+		out_buf = pkt->out_buf + iv_bytes;
+	}
+
 	ret = mbedtls_aes_crypt_cbc(cbc_ctx, MBEDTLS_AES_ENCRYPT, pkt->in_len,
-				    p_iv, pkt->in_buf, pkt->out_buf + iv_bytes);
+				    p_iv, pkt->in_buf, out_buf);
 	if (ret) {
 		LOG_ERR("Could not encrypt (%d)", ret);
 		return -EINVAL;
@@ -159,6 +180,7 @@ int mtls_cbc_decrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *iv
 	int ret, iv_bytes;
 	uint8_t *p_iv, iv_loc[16];
 	mbedtls_aes_context *cbc_ctx = MTLS_GET_CTX(ctx, aes);
+	uint8_t *out_buf;
 
 	if ((ctx->flags & CAP_NO_IV_PREFIX) == 0U) {
 		iv_bytes = 16;
@@ -169,8 +191,14 @@ int mtls_cbc_decrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *iv
 		p_iv = iv_loc;
 	}
 
+	if (ctx->flags & CAP_INPLACE_OPS) {
+		out_buf = pkt->in_buf + iv_bytes;
+	} else {
+		out_buf = pkt->out_buf;
+	}
+
 	ret = mbedtls_aes_crypt_cbc(cbc_ctx, MBEDTLS_AES_DECRYPT, pkt->in_len,
-				    p_iv, pkt->in_buf + iv_bytes, pkt->out_buf);
+				    p_iv, pkt->in_buf + iv_bytes, out_buf);
 	if (ret) {
 		LOG_ERR("Could not encrypt (%d)", ret);
 		return -EINVAL;
@@ -387,6 +415,11 @@ static int mtls_session_setup(const struct device *dev,
 		}
 		break;
 	case CRYPTO_CIPHER_MODE_CBC:
+		if (ctx->flags & CAP_INPLACE_OPS && (ctx->flags & CAP_NO_IV_PREFIX) == 0) {
+			LOG_ERR("In-place requires no IV prefix");
+			mtls_sessions[ctx_idx].in_use = false;
+			return -EINVAL;
+		}
 		aes_ctx = &mtls_sessions[ctx_idx].mtls_aes;
 		mbedtls_aes_init(aes_ctx);
 		if (op_type == CRYPTO_CIPHER_OP_ENCRYPT) {
