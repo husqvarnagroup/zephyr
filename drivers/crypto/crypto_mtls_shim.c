@@ -153,8 +153,7 @@ int mtls_ecb_decrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 
 int mtls_cbc_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *iv)
 {
-	int ret, iv_bytes;
-	uint8_t *p_iv, iv_loc[16];
+	int ret, iv_bytes = 0;
 	mbedtls_aes_context *cbc_ctx = MTLS_GET_CTX(ctx, aes);
 	uint8_t *out_buf;
 
@@ -169,11 +168,6 @@ int mtls_cbc_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *iv
 		 */
 		iv_bytes = 16;
 		memcpy(pkt->out_buf, iv, 16);
-		p_iv = iv;
-	} else {
-		iv_bytes = 0;
-		memcpy(iv_loc, iv, 16);
-		p_iv = iv_loc;
 	}
 
 	if (ctx->flags & CAP_INPLACE_OPS) {
@@ -183,7 +177,7 @@ int mtls_cbc_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *iv
 	}
 
 	ret = mbedtls_aes_crypt_cbc(cbc_ctx, MBEDTLS_AES_ENCRYPT, pkt->in_len,
-				    p_iv, pkt->in_buf, out_buf);
+				    iv, pkt->in_buf, out_buf);
 	if (ret) {
 		LOG_ERR("Could not encrypt (%d)", ret);
 		return -EINVAL;
