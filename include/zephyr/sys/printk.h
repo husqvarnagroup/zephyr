@@ -47,6 +47,8 @@ extern "C" {
 __printf_like(1, 2) void printk(const char *fmt, ...);
 __printf_like(1, 0) void vprintk(const char *fmt, va_list ap);
 
+void printk_hexdump(const char *str, const uint8_t *data, size_t data_length);
+
 #else
 static inline __printf_like(1, 2) void printk(const char *fmt, ...)
 {
@@ -57,6 +59,13 @@ static inline __printf_like(1, 0) void vprintk(const char *fmt, va_list ap)
 {
 	ARG_UNUSED(fmt);
 	ARG_UNUSED(ap);
+}
+
+static inline void printk_hexdump(const char *str, const uint8_t *data, size_t data_length);
+{
+	ARG_UNUSED(str);
+	ARG_UNUSED(data);
+	ARG_UNUSED(data_length);
 }
 #endif
 
