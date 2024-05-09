@@ -387,7 +387,14 @@ static inline bool z_zexpect(bool cond, const char *default_msg, const char *fil
  * @param ... Optional message and variables to print if the assertion fails
  */
 #define zassert_mem_equal__(buf, exp, size, ...)                                                   \
-	zassert(memcmp(buf, exp, size) == 0, #buf " not equal to " #exp, ##__VA_ARGS__)
+	do {                                                                                       \
+		const bool equal = memcmp(buf, exp, size) == 0;                                    \
+		if (!equal) {                                                                      \
+			printk_hexdump("expected", exp, size);                                     \
+			printk_hexdump("actually", buf, size);                                     \
+		}                                                                                  \
+		zassert(equal, #buf " not equal to " #exp, ##__VA_ARGS__);                         \
+	} while (0)
 
 /**
  * @}
