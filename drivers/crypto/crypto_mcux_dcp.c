@@ -83,8 +83,8 @@ static int crypto_dcp_aes_cbc_encrypt(struct cipher_ctx *ctx, struct cipher_pkt 
 	const struct crypto_dcp_config *cfg = ctx->device->config;
 	struct crypto_dcp_session *session = ctx->drv_sessn_state;
 	status_t status;
-	size_t iv_bytes;
-	uint8_t *p_iv, iv_loc[16];
+	size_t iv_bytes = 0;
+	uint8_t iv_loc[16];
 
 	if ((ctx->flags & CAP_NO_IV_PREFIX) == 0U) {
 		/* Prefix IV to ciphertext, which is default behavior of Zephyr
@@ -92,16 +92,11 @@ static int crypto_dcp_aes_cbc_encrypt(struct cipher_ctx *ctx, struct cipher_pkt 
 		 */
 		iv_bytes = 16U;
 		memcpy(pkt->out_buf, iv, 16U);
-		p_iv = iv;
-	} else {
-		iv_bytes = 0U;
-		memcpy(iv_loc, iv, 16U);
-		p_iv = iv_loc;
 	}
 
 	sys_cache_data_disable();
 	status = DCP_AES_EncryptCbc(cfg->base, &session->handle, pkt->in_buf,
-				    pkt->out_buf + iv_bytes, pkt->in_len, p_iv);
+				    pkt->out_buf + iv_bytes, pkt->in_len, iv);
 	sys_cache_data_enable();
 
 	if (status != kStatus_Success) {
@@ -118,16 +113,11 @@ static int crypto_dcp_aes_cbc_decrypt(struct cipher_ctx *ctx, struct cipher_pkt 
 	const struct crypto_dcp_config *cfg = ctx->device->config;
 	struct crypto_dcp_session *session = ctx->drv_sessn_state;
 	status_t status;
-	size_t iv_bytes;
-	uint8_t *p_iv, iv_loc[16];
+	size_t iv_bytes = 0;
+	uint8_t iv_loc[16];
 
 	if ((ctx->flags & CAP_NO_IV_PREFIX) == 0U) {
 		iv_bytes = 16U;
-		p_iv = iv;
-	} else {
-		iv_bytes = 0U;
-		memcpy(iv_loc, iv, 16U);
-		p_iv = iv_loc;
 	}
 
 	sys_cache_data_disable();
