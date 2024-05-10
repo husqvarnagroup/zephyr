@@ -153,11 +153,6 @@ static int dma_si32_config(const struct device *dev, uint32_t channel, struct dm
 		return -ENOTSUP;
 	}
 
-	if (cfg->error_callback_dis > 1) {
-		LOG_ERR("Error callback disabling not implemented");
-		return -ENOTSUP;
-	}
-
 	if (cfg->source_handshake > 1 || cfg->dest_handshake > 1) {
 		LOG_ERR("Handshake not implemented");
 		return -ENOTSUP;
