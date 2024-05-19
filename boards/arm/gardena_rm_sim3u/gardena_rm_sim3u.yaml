@@ -13,5 +13,6 @@ toolchain:
   - gnuarmemb
   - xtools
 supported:
+  - crypto
   - dma
   - gpio
