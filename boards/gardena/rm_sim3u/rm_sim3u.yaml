@@ -16,4 +16,5 @@ supported:
   - crypto
   - dma
   - gpio
+  - hwinfo
 vendor: gardena
