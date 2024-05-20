@@ -17,6 +17,7 @@ supported:
   - dma
   - flash
   - gpio
+  - hwinfo
   - nvs
   - uart
 vendor: gardena
