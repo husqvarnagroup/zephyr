@@ -17,4 +17,5 @@ supported:
   - dma
   - flash
   - gpio
+  - hwinfo
 vendor: gardena
