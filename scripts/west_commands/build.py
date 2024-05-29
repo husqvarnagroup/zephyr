@@ -123,9 +123,9 @@ class Build(Forceable):
                            help='''run build system target TARGET
                            (try "-t usage")''')
         group.add_argument('-T', '--test-item',
-                           help='''Build based on test data in testcase.yaml
-                           or sample.yaml. If source directory is not used
-                           an argument has to be defined as
+                           help='''Build based on test data in testcase.yaml,
+                           sample.yaml or twister.yaml. If source directory is
+                           not used an argument has to be defined as
                            SOURCE_PATH/TEST_NAME.
                            E.g. samples/hello_world/sample.basic.helloworld.
                            If source directory is passed
