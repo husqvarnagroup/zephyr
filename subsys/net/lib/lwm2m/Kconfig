@@ -18,7 +18,7 @@ source "subsys/net/Kconfig.template.log_config.net"
 
 menu "Protocol versions"
 
-choice
+choice LWM2M_VERSION
 	prompt "LwM2M protocol version"
 	default LWM2M_VERSION_1_0
 	help
@@ -555,7 +555,7 @@ config LWM2M_ENGINE_AUTO_SEND_FORCE_SEND
 
 endif # LWM2M_ENGINE_AUTO_SEND
 
-choice
+choice LWM2M_ENGINE_SEND_TIMEOUT
 	prompt "LwM2M send timeout action"
 	default LWM2M_ENGINE_SEND_TIMEOUT_FULL_REGISTRATION
 	help
