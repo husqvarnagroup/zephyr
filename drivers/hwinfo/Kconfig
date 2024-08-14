@@ -168,6 +168,13 @@ config HWINFO_SAM0
 	help
 	  Enable Atmel SAM0 hwinfo driver.
 
+config HWINFO_SI32
+	bool "Si32 hwinfo"
+	default y
+	depends on SOC_FAMILY_SILABS_SIM3
+	help
+	  Enable Si32 hwinfo driver.
+
 config HWINFO_SMARTBOND
 	bool "Smartbond device reset cause"
 	default y
