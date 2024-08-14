@@ -2,8 +2,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-identifier: sim3u1xx_dk
-name: Silicon Labs SiM3U development kit
+identifier: sgrm
+name: GARDENA Smart Garden Radio Module SiM3U
 type: mcu
 arch: arm
 ram: 32

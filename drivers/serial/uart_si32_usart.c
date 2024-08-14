@@ -219,6 +219,28 @@ static void usart_si32_irq_handler(const struct device *dev)
 }
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */
 
+#ifdef CONFIG_UART_LINE_CTRL
+
+static int usart_si32_line_ctrl_set(const struct device *dev, uint32_t ctrl, uint32_t val)
+{
+	const struct usart_si32_config *config = dev->config;
+
+	switch (ctrl) {
+	case UART_LINE_CTRL_RTS:
+		/* When inversion is not enabled, clear the RTS bit to signal readyness */
+		if (val) {
+			SI32_USART_A_clear_rts(config->usart);
+		} else {
+			SI32_USART_A_set_rts(config->usart);
+		}
+		return 0;
+	}
+
+	return -ENOTSUP;
+}
+
+#endif /* CONFIG_UART_LINE_CTRL */
+
 static const struct uart_driver_api usart_si32_driver_api = {
 	.poll_in = usart_si32_poll_in,
 	.poll_out = usart_si32_poll_out,
@@ -239,6 +261,10 @@ static const struct uart_driver_api usart_si32_driver_api = {
 	.irq_update = usart_si32_irq_update,
 	.irq_callback_set = usart_si32_irq_callback_set,
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */
+
+#ifdef CONFIG_UART_LINE_CTRL
+	.line_ctrl_set = usart_si32_line_ctrl_set,
+#endif
 };
 
 static int usart_si32_init(const struct device *dev)
@@ -298,10 +324,17 @@ static int usart_si32_init(const struct device *dev)
 
 	SI32_USART_A_exit_loopback_mode(config->usart);
 
+	/* Configure RTS to be pulled low when we are ready to receive data */
+	SI32_USART_A_disable_rts_inversion(config->usart);
+
+	/* Hardware flow control can only be enabled (or disabled) for both, RTS and CTS in the
+	 * device tree. As a workaround, when CONFIG_UART_LINE_CTRL is enabled, configure CTS only.
+	 */
 	if (config->hw_flow_control) {
+#if !defined(CONFIG_UART_LINE_CTRL)
 		SI32_USART_A_enable_rts(config->usart);
 		SI32_USART_A_select_rts_deassert_on_byte_free(config->usart);
-		SI32_USART_A_disable_rts_inversion(config->usart);
+#endif
 
 		SI32_USART_A_enable_cts(config->usart);
 		SI32_USART_A_disable_cts_inversion(config->usart);
@@ -340,6 +373,9 @@ static int usart_si32_init(const struct device *dev)
 	SI32_USART_A_disable_rx_signal_inversion(config->usart);
 	SI32_USART_A_select_rx_fifo_threshold_1(config->usart);
 	SI32_USART_A_enable_rx(config->usart);
+#if defined(CONFIG_UART_LINE_CTRL)
+	SI32_USART_A_clear_rts(config->usart);
+#endif
 
 	SI32_USART_A_flush_tx_fifo(config->usart);
 	SI32_USART_A_flush_rx_fifo(config->usart);

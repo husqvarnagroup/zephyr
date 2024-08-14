@@ -90,6 +90,16 @@
 			status = "disabled";
 		};
 
+		spi2: spi@40006000 {
+			compatible = "silabs,si32-spi";
+			reg = <0x40006000 0x1000>;
+			interrupts = <31 0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			clocks = <&clk_apb>;
+			status = "disabled";
+		};
+
 		gpio0: gpio@4002a0a0 {
 			compatible = "silabs,si32-gpio";
 			gpio-controller;
@@ -116,6 +126,36 @@
 			gpio-controller;
 			#gpio-cells = <2>;
 			reg = <0x4002a320 0xa0>;
+		};
+
+		gpio4: gpio@4002a3c0 {
+			compatible = "silabs,si32-hd-gpio";
+			gpio-controller;
+			#gpio-cells = <2>;
+			reg = <0x4002a3c0 0xa0>;
+		};
+
+		dma: dma-controller@40036000 {
+			compatible = "silabs,si32-dma";
+			reg = <0x40036000 0x1000>;
+			interrupts = <4 0>, <5 0>, <6 0>, <7 0>,
+			             <8 0>, <9 0>, <10 0>, <11 0>,
+			             <12 0>, <13 0>, <14 0>, <15 0>,
+			             <16 0>, <17 0>, <18 0>, <19 0>;
+			dma-channels = <16>;
+			#dma-cells = <3>;
+			status = "disabled";
+		};
+
+		crypto: crypto@40027000 {
+			compatible = "silabs,si32-aes";
+			reg = <0x40027000 0x1000>;
+			status = "disabled";
+			interrupts = <42 0>;
+			dmas = <&dma 5 0 0>,
+			       <&dma 6 0 0>,
+			       <&dma 7 0 0>;
+			dma-names = "tx", "rx", "xor";
 		};
 	};
 };

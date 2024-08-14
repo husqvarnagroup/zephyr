@@ -1,0 +1,145 @@
+/*
+ * Copyright (c) 2024 GARDENA GmbH
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+#include <silabs/sim3u167.dtsi>
+#include <zephyr/dt-bindings/gpio/silabs-si32-hd-gpio.h>
+#include "sgrm-pinctrl.dtsi"
+
+/ {
+	model = "GARDENA SiM3U radio module";
+	compatible = "gardena,sgrm-sim3u167", "silabs,sim3u167","silabs,sim3u";
+
+	chosen {
+		zephyr,console = &usart1;
+		zephyr,flash = &flash0;
+		zephyr,shell-uart = &usart1;
+		zephyr,sram = &sram0;
+		zephyr,ppp-uart = &usart0;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		status = "okay";
+
+		led_red: led_red {
+			gpios = <&gpio4 0 (GPIO_ACTIVE_LOW | SI32_GPIO_DS_ENABLE_CURRENT_LIMIT)>;
+			label = "Red LED 0";
+		};
+		led_green: led_green {
+			gpios = <&gpio4 1 (GPIO_ACTIVE_LOW | SI32_GPIO_DS_ENABLE_CURRENT_LIMIT)>;
+			label = "Green LED 0";
+		};
+		led_blue: led_blue {
+			gpios = <&gpio4 2 (GPIO_ACTIVE_LOW | SI32_GPIO_DS_ENABLE_CURRENT_LIMIT)>;
+			label = "Blue LED 0";
+		};
+	};
+
+	sgrm_antenna: sgrm_antenna {
+		compatible = "gardena,sgrm-antenna";
+		/* source for diversity control: 0=MCU, 1=TRX */
+		diversity-mode-gpios = <&gpio2 14 GPIO_ACTIVE_HIGH>;
+		/* diversity state (only relevant if mode is 0 (MCU)) */
+		diversity-state-gpios = <&gpio2 10 GPIO_ACTIVE_HIGH>;
+		/* selection of internal/external antenna (Art. 19005 only; ANT_INT_EXT on schematic) */
+		antenna-control-gpios = <&gpio0 7 GPIO_ACTIVE_HIGH>;
+		/* antenna control signal from Core9G25 to RM (Art. 19000 only; ANT_SELECT on schematic) */
+		antenna-input-gpios = <&gpio1 8 GPIO_ACTIVE_HIGH>;
+
+		led-red-input-gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>;
+		led-green-input-gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
+		led-blue-input-gpios = <&gpio0 6 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+&cpu0 {
+	clock-frequency = <76953600>;
+};
+
+&pll0 {
+	status = "okay";
+};
+
+&clk_ahb {
+	clocks = <&pll0>;
+	status = "okay";
+};
+
+&clk_apb {
+	divider = <2>;
+	status = "okay";
+};
+
+&usart0 {
+	current-speed = <500000>;
+	pinctrl-0 = <&usart0_default>;
+	pinctrl-names = "default";
+	hw-flow-control;
+	status = "okay";
+};
+
+&usart1 {
+	current-speed = <115200>;
+	pinctrl-0 = <&usart1_default>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+&gpio0 {
+	status = "okay";
+};
+
+&gpio1 {
+	status = "okay";
+};
+
+&gpio2 {
+	disable-pullups;
+	status = "okay";
+};
+
+&gpio3 {
+	status = "okay";
+};
+
+&gpio4 {
+	nchannel-current-limit = <7>;
+	pchannel-current-limit = <15>;
+	enable-bias;
+	low-power-port-mode;
+	enable-drivers;
+	status = "okay";
+};
+
+&flash0 {
+	status = "okay";
+
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		slot0_partition: partition@0 {
+			label = "image-0";
+			reg = <0x00000000 DT_SIZE_K(192)>;
+		};
+
+		storage_partition: partition@30000 {
+			label = "storage";
+			reg = <0x00030000 DT_SIZE_K(64)>;
+		};
+	};
+};
+
+&dma {
+	status = "okay";
+	dma-channels = <8>; /* Crypto DMA channels have ID 5, 6, and 7 */
+};
+
+&crypto {
+	status = "okay";
+};
