@@ -12,9 +12,11 @@ toolchain:
   - gnuarmemb
   - zephyr
 supported:
+  - crypto
   - dma
   - flash
   - gpio
+  - hwinfo
   - nvs
   - uart
 vendor: gardena
