@@ -324,7 +324,7 @@ class TestInstance:
 
         if enable_coverage:
             for cp in coverage_platform:
-                if cp in platform.aliases:
+                if cp in platform.aliases and platform.type != "native":
                     content = content + "\nCONFIG_COVERAGE=y"
                     content = content + "\nCONFIG_COVERAGE_DUMP=y"
 
