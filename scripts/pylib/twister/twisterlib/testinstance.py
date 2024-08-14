@@ -302,7 +302,8 @@ class TestInstance:
         if enable_coverage:
             if platform.name in coverage_platform:
                 content = content + "\nCONFIG_COVERAGE=y"
-                content = content + "\nCONFIG_COVERAGE_DUMP=y"
+                if platform.type != "native":
+                    content = content + "\nCONFIG_COVERAGE_DUMP=y"
 
         if enable_asan:
             if platform.type == "native":
