@@ -39,6 +39,10 @@ typedef bool (*for_each_res_inst_callback_t)(const struct lwm2m_engine_res *obj_
 static bool auto_send_enabled;
 static int64_t last_auto_send_check = -1;
 static bool auto_send_recover = false;
+static const struct lwm2m_obj_path *syncing_objects;
+static uint32_t syncing_objects_count = 0;
+static uint32_t syncing_objects_pending_flags = 0;
+static int64_t syncing_objects_timeout = -1;
 #if CONFIG_LWM2M_ENGINE_AUTO_SEND_CHECK_FREQUENCY_MAX > 0
 static bool ignore_max_frequency_for_next_check = false;
 #endif
@@ -59,6 +63,11 @@ static sys_slist_t partial_update_list;
 static time_t last_sent_time = -1;
 
 _Static_assert((time_t)(-1) < 0, "last_sent_time must be a signed type!");
+
+__weak void lwm2m_client_device_synced(void)
+{
+	LOG_DBG("inclusion objects synced");
+}
 
 static void for_each_res_inst(const struct lwm2m_engine_obj_inst *obj_inst,
 			      for_each_res_inst_callback_t callback, void *callback_ctx)
@@ -82,6 +91,21 @@ static void for_each_res_inst(const struct lwm2m_engine_obj_inst *obj_inst,
 			if (callback(obj_res, obj_res_inst, callback_ctx)) {
 				break;
 			}
+		}
+	}
+}
+
+static void mark_instance_as_synced(const struct lwm2m_engine_obj_inst *obj_inst)
+{
+	for (uint8_t i = 0; i < syncing_objects_count; i++) {
+		const uint32_t mask = 1u << i;
+		if (obj_inst->obj->obj_id == syncing_objects[i].obj_id &&
+		    obj_inst->obj_inst_id == syncing_objects[i].obj_inst_id) {
+			syncing_objects_pending_flags &= ~mask;
+			if (syncing_objects_pending_flags == 0) {
+				lwm2m_client_device_synced();
+			}
+			return;
 		}
 	}
 }
@@ -129,6 +153,10 @@ static bool mark_resources_as_sent_cb(const struct lwm2m_engine_res *obj_res,
 {
 	if (obj_res_inst->sending) {
 		obj_res_inst->sending = false;
+
+		if (syncing_objects_pending_flags) {
+			mark_instance_as_synced(callback_data);
+		}
 	}
 	return false;
 }
@@ -513,7 +541,7 @@ static void mark_resources_as_send_pass(void)
 		if (!obj_inst->resources || obj_inst->resource_count == 0U) {
 			continue;
 		}
-		for_each_res_inst(obj_inst, mark_resources_as_sent_cb, NULL);
+		for_each_res_inst(obj_inst, mark_resources_as_sent_cb, obj_inst);
 	}
 	lwm2m_registry_unlock();
 }
@@ -532,6 +560,45 @@ void lwm2m_engine_auto_send_set(bool enable)
 	auto_send_enabled = enable;
 }
 
+void lwm2m_engine_auto_send_set_syncing_objects(const struct lwm2m_obj_path path_list[],
+						uint8_t count, int64_t timeout)
+{
+	const uint8_t max_syncing_objects = sizeof(syncing_objects_pending_flags) * CHAR_BIT - 1;
+	if (count > max_syncing_objects) {
+		LOG_ERR("Max %d syncing objects are supported", max_syncing_objects);
+		return;
+	}
+
+	syncing_objects = path_list;
+	syncing_objects_count = count;
+	syncing_objects_timeout = k_uptime_get() + timeout;
+	syncing_objects_pending_flags = (1 << count) - 1;
+}
+
+static bool is_in_syncing_mode(void)
+{
+	if (!syncing_objects_pending_flags || syncing_objects_timeout < 0) {
+		return false;
+	}
+	if (k_uptime_get() > syncing_objects_timeout) {
+		LOG_ERR("syncing objects timed out");
+		syncing_objects_timeout = -1;
+		return false;
+	}
+	return true;
+}
+
+static bool is_syncing_object(const struct lwm2m_engine_obj_inst *obj_inst)
+{
+	for (uint8_t i = 0; i < syncing_objects_count; i++) {
+		if (syncing_objects[i].obj_id == obj_inst->obj->obj_id &&
+		    syncing_objects[i].obj_inst_id == obj_inst->obj_inst_id) {
+			return true;
+		}
+	}
+	return false;
+}
+
 int lwm2m_engine_auto_send_send_obj_inst(const struct lwm2m_obj_path *path)
 {
 	lwm2m_registry_lock();
@@ -539,6 +606,7 @@ int lwm2m_engine_auto_send_send_obj_inst(const struct lwm2m_obj_path *path)
 	struct lwm2m_engine_obj_inst *obj_inst = lwm2m_engine_get_obj_inst(path);
 	if (obj_inst == NULL) {
 		lwm2m_registry_unlock();
+		LOG_ERR("obj inst not found: %d/%d", path->obj_id, path->obj_inst_id);
 		return -ENOENT;
 	}
 	for_each_res_inst(obj_inst, mark_resources_as_dirty_cb, NULL);
@@ -609,6 +677,10 @@ void lwm2m_enginge_auto_send_run(struct lwm2m_ctx *ctx, const int64_t timestamp)
 
 	SYS_SLIST_FOR_EACH_CONTAINER(lwm2m_engine_obj_inst_list(), obj_inst, node) {
 		if (!obj_inst->resources || obj_inst->resource_count == 0U) {
+			continue;
+		}
+
+		if (is_in_syncing_mode() && !is_syncing_object(obj_inst)) {
 			continue;
 		}
 

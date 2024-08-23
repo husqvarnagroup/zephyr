@@ -9,6 +9,13 @@
 #include "lwm2m_observation.h"
 
 /**
+ * Callback when all syncing ipso objects are sucessfully sent to the gateway.
+ *
+ * @note This is a weak function. You can overwrite the default implementation.
+ */
+__weak void lwm2m_client_device_synced(void);
+
+/**
  * @brief Add a path as hint for each auto send.
  *
  * Use this if you want to always send certain object instances with all its containing resources
@@ -45,6 +52,23 @@ void lwm2m_engine_auto_send_send_all_objs(void);
  * @return 0 for success or negative in case of error
  */
 int lwm2m_engine_auto_send_ignore_path(const struct lwm2m_obj_path *path);
+
+/**
+ * @brief Register syncing objects to be sent first during the inclusion/connection process.
+ *
+ * Call this function on inclusion/connection to register ipso objects.
+ * Auto send initially only sends these objects until they are all successfully
+ * synchronised or a timeout occurs before the remaining objects are sent.
+ * Overwrite \lwm2m_client_device_synced to get a callback when all required
+ * objects are synced.
+ *
+ * @param path_list array with paths
+ * @param count number of paths to register as syncing objects
+ * @param timeout max time in ms to wait until switching to normal mode
+ *                and sending all objects
+ */
+void lwm2m_engine_auto_send_set_syncing_objects(const struct lwm2m_obj_path path_list[],
+						uint8_t count, int64_t timeout);
 
 /**
  * @brief Enable or disable auto send for modified resources
