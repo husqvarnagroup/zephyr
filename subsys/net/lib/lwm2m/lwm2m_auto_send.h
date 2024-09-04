@@ -11,9 +11,11 @@
 /**
  * Callback when all syncing ipso objects are sucessfully sent to the gateway.
  *
+ * @param success true if the syncing was successful, false if a timeout occurred
+ *
  * @note This is a weak function. You can overwrite the default implementation.
  */
-__weak void lwm2m_client_device_synced(void);
+__weak void lwm2m_client_device_synced(bool success);
 
 /**
  * @brief Add a path as hint for each auto send.

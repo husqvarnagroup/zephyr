@@ -64,9 +64,9 @@ static time_t last_sent_time = -1;
 
 _Static_assert((time_t)(-1) < 0, "last_sent_time must be a signed type!");
 
-__weak void lwm2m_client_device_synced(void)
+__weak void lwm2m_client_device_synced(bool success)
 {
-	LOG_DBG("inclusion objects synced");
+	LOG_DBG("Sync of inclusion objects %s", success ? "succesful" : "failed");
 }
 
 static void for_each_res_inst(const struct lwm2m_engine_obj_inst *obj_inst,
@@ -103,7 +103,7 @@ static void mark_instance_as_synced(const struct lwm2m_engine_obj_inst *obj_inst
 		    obj_inst->obj_inst_id == syncing_objects[i].obj_inst_id) {
 			syncing_objects_pending_flags &= ~mask;
 			if (syncing_objects_pending_flags == 0) {
-				lwm2m_client_device_synced();
+				lwm2m_client_device_synced(true);
 			}
 			return;
 		}
@@ -583,6 +583,7 @@ static bool is_in_syncing_mode(void)
 	if (k_uptime_get() > syncing_objects_timeout) {
 		LOG_ERR("syncing objects timed out");
 		syncing_objects_timeout = -1;
+		lwm2m_client_device_synced(false);
 		return false;
 	}
 	return true;
