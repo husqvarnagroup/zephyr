@@ -175,7 +175,7 @@ def check_assigned_sym_values(kconf):
                 msg += "Check these unsatisfied dependencies: " + \
                     ", ".join(expr_strs) + ". "
 
-            warn(msg + SYM_INFO_HINT.format(sym), kconf)
+            warn(msg + SYM_INFO_HINT.format(sym))
 
 
 def missing_deps(sym):
@@ -223,8 +223,7 @@ def check_assigned_choice_values(kconf):
             warn(f"""\
 The choice symbol {choice.user_selection.name_and_loc} was selected (set =y),
 but {choice.selection.name_and_loc if choice.selection else "no symbol"} ended
-up as the choice selection. """ + SYM_INFO_HINT.format(choice.user_selection),
-                 kconf)
+up as the choice selection. """ + SYM_INFO_HINT.format(choice.user_selection))
 
 
 # Hint on where to find symbol information. Used like
@@ -245,7 +244,7 @@ def check_deprecated(kconf):
         selectors = [s for s in split_expr(dep_expr, OR) if expr_value(s) == 2]
         for selector in selectors:
             selector_name = split_expr(selector, AND)[0].name
-            warn(f'Deprecated symbol {selector_name} is enabled.', kconf)
+            warn(f'Deprecated symbol {selector_name} is enabled.')
 
 
 def check_experimental(kconf):
@@ -256,7 +255,7 @@ def check_experimental(kconf):
         selectors = [s for s in split_expr(dep_expr, OR) if expr_value(s) == 2]
         for selector in selectors:
             selector_name = split_expr(selector, AND)[0].name
-            warn(f'Experimental symbol {selector_name} is enabled.', kconf)
+            warn(f'Experimental symbol {selector_name} is enabled.')
 
 
 def promptless(sym):
@@ -313,9 +312,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def warn(msg, kconf):
-    if kconf.syms.get('KCONFIG_WARNINGS_AS_ERRORS', kconf.n).tri_value == 2:
-        err(msg)
+def warn(msg):
     # Use a large fill() width to try to avoid linebreaks in the symbol
     # reference link, and add some extra newlines to set the message off from
     # surrounding text (this usually gets printed as part of spammy CMake
