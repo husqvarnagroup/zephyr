@@ -175,7 +175,7 @@ def check_assigned_sym_values(kconf):
                 msg += "Check these unsatisfied dependencies: " + \
                     ", ".join(expr_strs) + ". "
 
-            warn(msg + SYM_INFO_HINT.format(sym))
+            err(msg + SYM_INFO_HINT.format(sym))
 
 
 def missing_deps(sym):
