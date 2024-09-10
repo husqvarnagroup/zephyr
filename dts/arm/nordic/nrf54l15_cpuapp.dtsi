@@ -37,7 +37,7 @@ nvic: &cpuapp_nvic {};
 };
 
 &cpuflpr_vpr {
-	cpuapp_vevif_rx: mailbox@1 {
+	cpuapp_vevif_rx: mailbox@5004c000 {
 		compatible = "nordic,nrf-vevif-event-rx";
 		reg = <0x0 0x1000>;
 		status = "disabled";
