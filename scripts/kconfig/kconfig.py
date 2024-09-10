@@ -244,7 +244,7 @@ def check_deprecated(kconf):
         selectors = [s for s in split_expr(dep_expr, OR) if expr_value(s) == 2]
         for selector in selectors:
             selector_name = split_expr(selector, AND)[0].name
-            warn(f'Deprecated symbol {selector_name} is enabled.')
+            err(f'Deprecated symbol {selector_name} is enabled.')
 
 
 def check_experimental(kconf):
