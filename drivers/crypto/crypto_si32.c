@@ -96,7 +96,7 @@ static int crypto_si32_query_hw_caps(const struct device *dev)
 	ARG_UNUSED(dev);
 
 	return (CAP_RAW_KEY | CAP_INPLACE_OPS | CAP_SEPARATE_IO_BUFS | CAP_SYNC_OPS |
-		CAP_NO_IV_PREFIX);
+		CAP_NO_IV_PREFIX | CAP_AES_CTR_CUSTOM_COUNTER_INIT);
 }
 
 static void crypto_si32_irq_error_handler(const struct device *dev)
@@ -1122,7 +1122,7 @@ static int crypto_si32_begin_session(const struct device *dev, struct cipher_ctx
 			break;
 		case CRYPTO_CIPHER_MODE_CTR:
 			ctx->ops.ctr_crypt_hndlr = crypto_si32_aes_ctr_op;
-			session->current_ctr = 0;
+			session->current_ctr = ctx->mode_params.ctr_info.ctr_initial_value;
 			break;
 		case CRYPTO_CIPHER_MODE_CCM:
 		case CRYPTO_CIPHER_MODE_GCM:
@@ -1150,7 +1150,7 @@ static int crypto_si32_begin_session(const struct device *dev, struct cipher_ctx
 			break;
 		case CRYPTO_CIPHER_MODE_CTR:
 			ctx->ops.ctr_crypt_hndlr = crypto_si32_aes_ctr_op;
-			session->current_ctr = 0;
+			session->current_ctr = ctx->mode_params.ctr_info.ctr_initial_value;
 			break;
 		case CRYPTO_CIPHER_MODE_CCM:
 		case CRYPTO_CIPHER_MODE_GCM:
