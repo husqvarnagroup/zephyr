@@ -110,6 +110,7 @@ enum sm_engine_state {
 	ENGINE_DEREGISTER_SENT,
 	ENGINE_DEREGISTERED,
 	ENGINE_NETWORK_ERROR,
+	ENGINE_NETWORK_TIMEOUT,
 };
 
 struct lwm2m_rd_client_info {
@@ -466,8 +467,8 @@ static int do_bootstrap_reply_cb(const struct coap_packet *response,
 
 static void do_bootstrap_reg_timeout_cb(struct lwm2m_message *msg)
 {
-	LOG_WRN("Bootstrap Timeout");
-	sm_handle_timeout_state(ENGINE_NETWORK_ERROR);
+	LOG_INF("Bootstrap Timeout");
+	sm_handle_timeout_state(ENGINE_NETWORK_TIMEOUT);
 }
 #endif
 
@@ -555,9 +556,9 @@ fail:
 
 static void do_registration_timeout_cb(struct lwm2m_message *msg)
 {
-	LOG_WRN("Registration Timeout");
+	LOG_INF("Registration Timeout");
 
-	sm_handle_timeout_state(ENGINE_NETWORK_ERROR);
+	sm_handle_timeout_state(ENGINE_NETWORK_TIMEOUT);
 }
 
 static int do_update_reply_cb(const struct coap_packet *response,
@@ -592,7 +593,7 @@ static int do_update_reply_cb(const struct coap_packet *response,
 
 static void do_update_timeout_cb(struct lwm2m_message *msg)
 {
-	LOG_WRN("Registration Update Timeout");
+	LOG_INF("Registration Update Timeout");
 
 	if (client.ctx->sock_fd > -1) {
 		client.close_socket = true;
@@ -629,7 +630,7 @@ static int do_deregister_reply_cb(const struct coap_packet *response,
 
 static void do_deregister_timeout_cb(struct lwm2m_message *msg)
 {
-	LOG_WRN("De-Registration Timeout");
+	LOG_INF("De-Registration Timeout");
 
 	sm_handle_timeout_state(ENGINE_DEREGISTERED);
 }
@@ -703,7 +704,7 @@ static int sm_next_bootstrap_inst(int *sec_obj_inst)
 		}
 	}
 
-	LOG_WRN("No Bootstrap servers found.");
+	LOG_INF("No Bootstrap servers found.");
 
 	return -ENOENT;
 }
@@ -1292,11 +1293,9 @@ static bool fallback_to_bootstrap(void)
 	return false;
 }
 
-static void sm_do_network_error(void)
+static void sm_do_network_issue(void)
 {
 	int err;
-
-	LOG_ERR("sm_do_network_error, retries %d", client.retries);
 
 	lwm2m_socket_close(client.ctx);
 
@@ -1524,7 +1523,13 @@ static void lwm2m_rd_client_service(struct k_work *work)
 			break;
 
 		case ENGINE_NETWORK_ERROR:
-			sm_do_network_error();
+			LOG_ERR("network error, retries %d", client.retries);
+			sm_do_network_issue();
+			break;
+
+		case ENGINE_NETWORK_TIMEOUT:
+			LOG_INF("network timeout, retries %d", client.retries);
+			sm_do_network_issue();
 			break;
 
 		default:
