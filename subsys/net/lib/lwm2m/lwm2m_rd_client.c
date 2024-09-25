@@ -1296,7 +1296,7 @@ static void sm_do_network_error(void)
 {
 	int err;
 
-	LOG_ERR("sm_do_network_error, retries %d", client.retries);
+	LOG_WRN("sm_do_network_error, retries %d", client.retries);
 
 	lwm2m_socket_close(client.ctx);
 
