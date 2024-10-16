@@ -141,6 +141,9 @@ static int dma_si32_config(const struct device *dev, uint32_t channel, struct dm
 		return -EINVAL;
 	}
 
+	/* Stop all (potentially) ongoing DMA operations for this channel */
+	SI32_DMACTRL_A_disable_channel(SI32_DMACTRL_0, channel);
+
 	channel_descriptor = &channel_descriptors[channel];
 
 	if (cfg == NULL) {
