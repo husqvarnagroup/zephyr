@@ -200,18 +200,25 @@ static int dma_si32_stop(const struct device *dev, const uint32_t channel)
 
 static int dma_si32_config(const struct device *dev, uint32_t channel, struct dma_config *cfg)
 {
-	ARG_UNUSED(dev);
-
 	const struct dma_block_config *block;
 	struct SI32_DMADESC_A_Struct *channel_descriptor;
 	struct dma_si32_channel_data *channel_data;
 	uint32_t ncount;
+	int ret;
 
 	LOG_INF("Configuring channel %" PRIu8, channel);
 
 	if (channel >= CHANNEL_COUNT) {
 		LOG_ERR("Invalid channel (id %" PRIu32 ", have %d)", channel, CHANNEL_COUNT);
 		return -EINVAL;
+	}
+
+	/* Prevent messing up (potentially) ongoing DMA operations and their settings by disabling
+	 * the channel before applying new settings.
+	 */
+	ret = dma_si32_stop(dev, channel);
+	if (ret) {
+		return ret;
 	}
 
 	channel_descriptor = &channel_descriptors[channel];
