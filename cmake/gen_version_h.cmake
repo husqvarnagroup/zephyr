@@ -12,8 +12,11 @@ if(NOT DEFINED ${BUILD_VERSION_NAME})
   cmake_path(GET VERSION_FILE PARENT_PATH work_dir)
   find_package(Git QUIET)
   if(GIT_FOUND)
+    if(DEFINED APP_VERSION_GIT_TAG_MATCH_PREFIX)
+      set(GIT_ARGS_MATCH --match "${APP_VERSION_GIT_TAG_MATCH_PREFIX}*")
+    endif()
     execute_process(
-      COMMAND ${GIT_EXECUTABLE} describe --abbrev=12 --always
+      COMMAND ${GIT_EXECUTABLE} describe --abbrev=12 --always --dirty ${GIT_ARGS_MATCH}
       WORKING_DIRECTORY                ${work_dir}
       OUTPUT_VARIABLE                  ${BUILD_VERSION_NAME}
       OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -25,6 +28,10 @@ if(NOT DEFINED ${BUILD_VERSION_NAME})
       message(STATUS "git describe failed: ${stderr}")
     elseif(NOT "${stderr}" STREQUAL "")
       message(STATUS "git describe warned: ${stderr}")
+    endif()
+    if(DEFINED APP_VERSION_GIT_TAG_MATCH_PREFIX)
+      # Remove the version prefix from Git tag.
+      string(REPLACE "${APP_VERSION_GIT_TAG_MATCH_PREFIX}" "" ${BUILD_VERSION_NAME} ${${BUILD_VERSION_NAME}})
     endif()
   endif()
 endif()
