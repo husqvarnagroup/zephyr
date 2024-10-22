@@ -15,7 +15,10 @@ endif()
 
 if(NOT DEFINED ${BUILD_VERSION_NAME})
   cmake_path(GET VERSION_FILE PARENT_PATH work_dir)
-  git_describe(${work_dir} ${BUILD_VERSION_NAME})
+  if(DEFINED APP_VERSION_GIT_TAG_MATCH_PREFIX)
+    set(APP_VERSION_GIT_TAG_MATCH_PREFIX "${APP_VERSION_GIT_TAG_MATCH_PREFIX}")
+  endif()
+  git_describe(${work_dir} ${BUILD_VERSION_NAME} MATCH_GLOB_PREFIX ${APP_VERSION_GIT_TAG_MATCH_PREFIX} DIRTY)
 endif()
 
 include(${ZEPHYR_BASE}/cmake/modules/version.cmake)
