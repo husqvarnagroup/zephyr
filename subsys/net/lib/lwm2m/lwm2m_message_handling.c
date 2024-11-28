@@ -1204,16 +1204,8 @@ static int lwm2m_write_handler_opaque(struct lwm2m_engine_obj_inst *obj_inst,
 
 int lwm2m_register_pre_request_cb(lwm2m_engine_pre_request_cb_t cb)
 {
-	if (cb == NULL) {
-		atomic_ptr_clear(&lwm2m_pre_request_cb);
-		return 0;
-	}
-
-	if (atomic_ptr_cas(&lwm2m_pre_request_cb, NULL, (void *)cb)) {
-		return 0;
-	}
-
-	return -EBUSY;
+	atomic_ptr_set(&lwm2m_pre_request_cb, (void *)cb);
+	return 0;
 }
 
 /* This function is exposed for the content format writers */

@@ -72,7 +72,7 @@ int lwm2m_perform_read_op(struct lwm2m_message *msg, uint16_t content_format);
  *
  * @param cb Callback to be registered. Can be NULL to un-register a (potentially) registered
  *           pre-request callback.
- * @return  0 on success, -EBUSY if already registered
+ * @return  0 on success, negative errno on failure
  */
 int lwm2m_register_pre_request_cb(lwm2m_engine_pre_request_cb_t cb);
 
