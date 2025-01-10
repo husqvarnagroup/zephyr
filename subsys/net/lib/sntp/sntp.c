@@ -129,6 +129,9 @@ static int32_t parse_response(uint8_t *data, uint16_t len, struct sntp_time *exp
 	res->fraction = ntohl(pkt->tx_tm_f);
 	res->seconds = ntohl(pkt->tx_tm_s);
 #endif
+#if defined(CONFIG_SNTP_STRATUM)
+	res->stratum = pkt->stratum;
+#endif
 	ts = ntohl(pkt->tx_tm_s);
 
 	/* Check if most significant bit is set */
