@@ -37,6 +37,9 @@ struct sntp_time {
 	uint64_t uptime_us;      /**< Uptime in microseconds */
 	uint32_t uncertainty_us; /**< Uncertainty in microseconds */
 #endif
+#if defined(CONFIG_SNTP_STRATUM)
+	uint8_t stratum;
+#endif
 };
 
 /** SNTP context */

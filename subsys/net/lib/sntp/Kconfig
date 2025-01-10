@@ -19,6 +19,12 @@ config SNTP_UNCERTAINTY
 	  Enabling this option uses more resources (memory) and is not normally
 	  needed.
 
+config SNTP_STRATUM
+    bool "Add stratum to the sntp_time struct"
+    help
+      Propagate the stratum from the NTP server's response to the sntp_time to
+      differentiate between different qualities of the time source.
+
 module = SNTP
 module-dep = NET_LOG
 module-str = Log level for SNTP
