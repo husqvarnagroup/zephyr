@@ -21,4 +21,4 @@ struct cbc_test_data {
 	uint8_t key[16];
 };
 
-extern const struct cbc_test_data cbc_test_data;
+extern struct cbc_test_data cbc_test_data;

@@ -22,4 +22,4 @@ struct ctr_test_data {
 	uint32_t ctr_init;
 };
 
-extern const struct ctr_test_data ctr_test_data;
+extern struct ctr_test_data ctr_test_data;

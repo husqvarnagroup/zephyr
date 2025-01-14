@@ -206,7 +206,7 @@ ZTEST_F(crypto_cbc, test_decrypt_partial_buf)
 
 ZTEST_F(crypto_cbc, test_fragmented_calculation)
 {
-	if(IS_ENABLED(CONFIG_CRYPTO_TINYCRYPT_SHIM)) {
+	if (IS_ENABLED(CONFIG_CRYPTO_TINYCRYPT_SHIM)) {
 		/* TC prefixes IV. Supporting this would make this test harder to read */
 		ztest_test_skip();
 	}

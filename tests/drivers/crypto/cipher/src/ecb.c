@@ -65,7 +65,7 @@ void crypto_ecb_before(void *fixture)
 {
 	struct crypto_ecb_fixture *f = (struct crypto_ecb_fixture *)fixture;
 
-	zassert_false(f->ctx_free_in_teardown, "Last test did not free crypto sesion");
+	zassert_false(f->ctx_free_in_teardown, "Last test did not free crypto session");
 
 	/* Reset context to sensible defaults */
 	f->ctx = (struct cipher_ctx){
