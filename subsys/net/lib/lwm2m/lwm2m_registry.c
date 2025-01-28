@@ -784,6 +784,14 @@ static int lwm2m_engine_set(const struct lwm2m_obj_path *path, const void *value
 #if defined(CONFIG_LWM2M_ENGINE_AUTO_SEND)
 	changed |= res_inst->force;
 	res_inst->dirty |= changed;
+
+	struct lwm2m_ctx *ctx = lwm2m_rd_client_ctx();
+	if (res_inst->dirty && ctx != NULL && !lwm2m_rd_client_is_registred(ctx) &&
+	    ctx->sock_fd < 0 && ctx->remote_addr.sa_family != 0) {
+		LOG_DBG("Expired - trigger registration");
+		ctx->connection_suspended = true;
+		lwm2m_rd_client_register();
+	}
 #endif
 
 	if (changed && LWM2M_HAS_PERM(obj_field, LWM2M_PERM_R)) {
