@@ -785,6 +785,13 @@ static int lwm2m_engine_set(const struct lwm2m_obj_path *path, const void *value
 #if defined(CONFIG_SG_LIB_LWM2M_AUTO_SEND)
 	changed |= res_inst->force;
 	res_inst->dirty |= changed;
+
+	/* Trigger a new registration, if a value should be sent and the client is not
+	 * registered.
+	 */
+	if (res_inst->dirty) {
+		lwm2m_rd_client_register();
+	}
 #endif
 
 	if (changed && LWM2M_HAS_PERM(obj_field, LWM2M_PERM_R)) {
