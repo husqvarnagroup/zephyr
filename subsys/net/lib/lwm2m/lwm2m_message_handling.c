@@ -3044,7 +3044,12 @@ void lwm2m_udp_receive(struct lwm2m_ctx *client_ctx, uint8_t *buf, uint16_t buf_
 		/* Calling before lwm2m_registry_lock() to prevent deadlocks */
 		cb = (lwm2m_engine_pre_request_cb_t)atomic_ptr_get(&lwm2m_pre_request_cb);
 		if (cb != NULL) {
-			r = cb(msg);
+			struct lwm2m_message message = {0};
+			struct coap_option options[4];
+			int nr_of_options = coap_find_options(&response, COAP_OPTION_URI_PATH,
+							      options, ARRAY_SIZE(options));
+			coap_options_to_path(options, nr_of_options, &message.path);
+			r = cb(&message.path);
 			if (r < 0) {
 				LOG_ERR("pre-request callback failed: %d", r);
 				return;

@@ -43,7 +43,7 @@
 int coap_options_to_path(struct coap_option *opt, int options_count,
 				struct lwm2m_obj_path *path);
 
-typedef int (*lwm2m_engine_pre_request_cb_t)(struct lwm2m_message* msg);
+typedef int (*lwm2m_engine_pre_request_cb_t)(struct lwm2m_obj_path *path);
 
 /* LwM2M message functions */
 struct lwm2m_message *lwm2m_get_message(struct lwm2m_ctx *client_ctx);
