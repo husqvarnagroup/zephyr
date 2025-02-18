@@ -3052,7 +3052,6 @@ void lwm2m_udp_receive(struct lwm2m_ctx *client_ctx, uint8_t *buf, uint16_t buf_
 			r = cb(&path);
 			if (r < 0) {
 				LOG_ERR("pre-request callback failed: %d", r);
-				return;
 			}
 		}
 
