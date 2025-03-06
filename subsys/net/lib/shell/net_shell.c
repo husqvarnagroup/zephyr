@@ -132,6 +132,16 @@ void get_addresses(struct net_context *context,
 
 const char *iface2str(struct net_if *iface, const char **extra)
 {
+#ifdef CONFIG_NET_L2_LEMONBEAT
+	if (net_if_l2(iface) == &NET_L2_GET_NAME(LEMONBEAT)) {
+		if (extra) {
+			*extra = "=========";
+		}
+
+		return "Lemonbeat";
+	}
+#endif
+
 #ifdef CONFIG_NET_L2_IEEE802154
 	if (net_if_l2(iface) == &NET_L2_GET_NAME(IEEE802154)) {
 		if (extra) {
