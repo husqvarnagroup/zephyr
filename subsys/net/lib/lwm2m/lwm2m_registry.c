@@ -1167,7 +1167,7 @@ int lwm2m_get_resource(const struct lwm2m_obj_path *path, struct lwm2m_engine_re
 size_t lwm2m_engine_get_opaque_more(struct lwm2m_input_context *in, uint8_t *buf, size_t buflen,
 				    struct lwm2m_opaque_context *opaque, bool *last_block)
 {
-	uint32_t in_len = opaque->len - opaque->offset;
+	uint32_t in_len = opaque->remaining;
 	uint16_t remaining = in->in_cpkt->max_len - in->offset;
 
 	if (in_len > buflen) {
@@ -1178,8 +1178,9 @@ size_t lwm2m_engine_get_opaque_more(struct lwm2m_input_context *in, uint8_t *buf
 		in_len = remaining;
 	}
 
+	opaque->remaining -= in_len;
 	remaining -= in_len;
-	if (opaque->offset + in_len >= opaque->len) {
+	if (opaque->remaining == 0U || remaining == 0) {
 		*last_block = true;
 	}
 

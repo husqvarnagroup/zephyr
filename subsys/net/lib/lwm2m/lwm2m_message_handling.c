@@ -1025,7 +1025,6 @@ static int lwm2m_write_handler_opaque(struct lwm2m_engine_obj_inst *obj_inst,
 	struct lwm2m_opaque_context opaque_ctx = {0};
 	void *write_buf;
 	size_t write_buf_len;
-	int written = 0;
 
 	if (msg->in.block_ctx != NULL) {
 		last_block = msg->in.block_ctx->last_block;
@@ -1053,7 +1052,7 @@ static int lwm2m_write_handler_opaque(struct lwm2m_engine_obj_inst *obj_inst,
 		len = engine_get_opaque(&msg->in, write_buf, MIN(data_len, write_buf_len),
 					&opaque_ctx, &last_pkt_block);
 		if (len <= 0) {
-			break;
+			return len;
 		}
 
 #if CONFIG_LWM2M_ENGINE_VALIDATION_BUFFER_SIZE > 0
@@ -1061,7 +1060,7 @@ static int lwm2m_write_handler_opaque(struct lwm2m_engine_obj_inst *obj_inst,
 			ret = res->validate_cb(obj_inst->obj_inst_id, res->res_id,
 					       res_inst->res_inst_id, write_buf, len,
 					       last_pkt_block && last_block, opaque_ctx.len,
-					       opaque_ctx.offset);
+					       msg->in.block_ctx->ctx.current);
 			if (ret < 0) {
 				/* -EEXIST will generate Bad Request LWM2M response. */
 				return -EEXIST;
@@ -1075,7 +1074,7 @@ static int lwm2m_write_handler_opaque(struct lwm2m_engine_obj_inst *obj_inst,
 			ret = res->post_write_cb(
 				obj_inst->obj_inst_id, res->res_id, res_inst->res_inst_id, data_ptr,
 				len, last_pkt_block && last_block, opaque_ctx.len,
-				opaque_ctx.offset);
+				(msg->in.block_ctx ? msg->in.block_ctx->ctx.current : 0));
 			if (ret < 0) {
 				return ret;
 			}
@@ -1083,15 +1082,13 @@ static int lwm2m_write_handler_opaque(struct lwm2m_engine_obj_inst *obj_inst,
 		if (msg->in.block_ctx && !last_pkt_block) {
 			msg->in.block_ctx->ctx.current += len;
 		}
-		opaque_ctx.offset += len;
-		written += len;
 	}
 
 	if (msg->in.block_ctx != NULL) {
 		msg->in.block_ctx->opaque = opaque_ctx;
 	}
 
-	return (len < 0 ? len : written);
+	return opaque_ctx.len;
 }
 
 int lwm2m_register_pre_request_cb(lwm2m_engine_pre_request_cb_t cb)
@@ -1147,7 +1144,7 @@ int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst, struct lwm2m_eng
 	if (msg->in.block_ctx != NULL) {
 		/* Get block_ctx for total_size (might be zero) */
 		total_size = msg->in.block_ctx->ctx.total_size;
-		offset = msg->in.block_ctx->opaque.offset;
+		offset = msg->in.block_ctx->ctx.current;
 
 		LOG_DBG("BLOCK1: total:%zu current:%zu"
 			" last:%u",
@@ -1336,10 +1333,6 @@ int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst, struct lwm2m_eng
 						 res_inst->res_inst_id, data_ptr, len, last_block,
 						 total_size, offset);
 		}
-	}
-
-	if (!res->post_write_cb) {
-		len += offset;
 	}
 
 	res_inst->data_len = len;
