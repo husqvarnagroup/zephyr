@@ -444,7 +444,7 @@ static int get_opaque(struct lwm2m_input_context *in, uint8_t *value, size_t buf
 	states->constant_state->enforce_canonical = false;
 
 	/* Get the CBOR header only on first read. */
-	if (opaque->offset == 0) {
+	if (opaque->remaining == 0) {
 		ret = zcbor_bstr_start_decode_fragment(states, &hndl);
 
 		if (!ret) {
@@ -453,6 +453,7 @@ static int get_opaque(struct lwm2m_input_context *in, uint8_t *value, size_t buf
 		}
 
 		opaque->len = hndl.total_len;
+		opaque->remaining = hndl.total_len;
 
 		int len = ICTX_CBOR_R_SZ(states[0].payload, in);
 
