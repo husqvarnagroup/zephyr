@@ -1779,8 +1779,10 @@ void lwm2m_rd_client_update(void)
 void lwm2m_rd_client_register(void)
 {
 	k_mutex_lock(&client.mutex, K_FOREVER);
-	set_sm_state(ENGINE_DO_REGISTRATION);
-	next_event_at(0);
+	if (!client.use_bootstrap && client.engine_state == ENGINE_IDLE && client.ctx != NULL) {
+		set_sm_state(ENGINE_DO_REGISTRATION);
+		next_event_at(0);
+	}
 	k_mutex_unlock(&client.mutex);
 }
 
