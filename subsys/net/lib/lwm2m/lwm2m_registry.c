@@ -487,7 +487,7 @@ int lwm2m_set_res_buf(const struct lwm2m_obj_path *path, void *buffer_ptr, uint1
 	res_inst->data_len = data_len;
 	res_inst->max_data_len = buffer_len;
 	res_inst->data_flags = data_flags;
-#if defined(CONFIG_LWM2M_ENGINE_AUTO_SEND)
+#if defined(CONFIG_SG_LIB_LWM2M_AUTO_SEND)
 	res_inst->dirty = true;
 #endif
 
@@ -495,7 +495,7 @@ int lwm2m_set_res_buf(const struct lwm2m_obj_path *path, void *buffer_ptr, uint1
 	return ret;
 }
 
-#if defined(CONFIG_LWM2M_ENGINE_AUTO_SEND)
+#if defined(CONFIG_SG_LIB_LWM2M_AUTO_SEND)
 int lwm2m_set_res_force_send(const struct lwm2m_obj_path *path, bool force)
 {
 	int ret;
@@ -782,7 +782,7 @@ static int lwm2m_engine_set(const struct lwm2m_obj_path *path, const void *value
 					 data_ptr, len, false, 0, 0);
 	}
 
-#if defined(CONFIG_LWM2M_ENGINE_AUTO_SEND)
+#if defined(CONFIG_SG_LIB_LWM2M_AUTO_SEND)
 	changed |= res_inst->force;
 	res_inst->dirty |= changed;
 
