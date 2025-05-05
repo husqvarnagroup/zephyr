@@ -888,17 +888,23 @@ static int lwm2m_engine_get(const struct lwm2m_obj_path *path, void *buf, uint16
 		return -ENOENT;
 	}
 
-	/* setup initial data elements */
-	data_ptr = res_inst->data_ptr;
-	data_len = res_inst->data_len;
-
-	/* allow user to override data elements via callback */
-	if (res->read_cb) {
+	if (res->read_cb == NULL) {
+		/* setup initial data elements */
+		data_ptr = res_inst->data_ptr;
+		data_len = res_inst->data_len;
+	} else {
+		/* get data elements via callback */
 		data_ptr = res->read_cb(obj_inst->obj_inst_id, res->res_id, res_inst->res_inst_id,
-					&data_len);
+		                        &data_len);
 	}
 
-	if (data_ptr && data_len > 0) {
+	if (data_ptr == NULL) {
+		LOG_ERR("res instance %d has no data", path->res_inst_id);
+		k_mutex_unlock(&registry_lock);
+		return -ENOENT;
+	}
+
+	if (data_len > 0) {
 		ret = lwm2m_check_buf_sizes(obj_field->data_type, data_len, buflen);
 		if (ret) {
 			LOG_ERR("Incorrect resource data length %zu. Buffer length %u", data_len,
