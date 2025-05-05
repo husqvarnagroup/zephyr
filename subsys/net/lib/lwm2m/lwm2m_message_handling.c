@@ -1560,22 +1560,21 @@ static int lwm2m_read_handler(struct lwm2m_engine_obj_inst *obj_inst, struct lwm
 			/* Content Format Writer have to support timestamp write */
 			ret = lwm2m_read_cached_data(msg, cached_data, obj_field->data_type);
 		} else {
-			/* setup initial data elements */
-			data_ptr = res->res_instances[i].data_ptr;
-			data_len = res->res_instances[i].data_len;
-
-			/* allow user to override data elements via callback */
-			if (res->read_cb) {
-				data_ptr =
-					res->read_cb(obj_inst->obj_inst_id, res->res_id,
-						     res->res_instances[i].res_inst_id, &data_len);
+			if (res->read_cb == NULL) {
+				/* use resource buffer */
+				data_ptr = res->res_instances[i].data_ptr;
+				data_len = res->res_instances[i].data_len;
+			} else {
+				/* get resource via callback */
+				data_ptr = res->read_cb(obj_inst->obj_inst_id, res->res_id,
+					res->res_instances[i].res_inst_id, &data_len);
 			}
 
-			if (!data_ptr && data_len) {
+			if (data_ptr == NULL) {
 				return -ENOENT;
 			}
 
-			if (!data_len) {
+			if (data_len == 0) {
 				if (obj_field->data_type != LWM2M_RES_TYPE_OPAQUE &&
 				    obj_field->data_type != LWM2M_RES_TYPE_STRING) {
 					return -ENOENT;

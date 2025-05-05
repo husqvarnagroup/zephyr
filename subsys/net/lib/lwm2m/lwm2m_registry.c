@@ -505,6 +505,19 @@ static bool lwm2m_validate_time_resource_lenghts(uint16_t resource_length, uint1
 	return true;
 }
 
+/*
+ * Verifies that a resource can be read into a buffer of length `buf_length`.
+ *
+ * Works for all resources except LWM2M_RES_TYPE_TIME. Someone had the ingenious idea to check
+ * it with `lwm2m_validate_time_resource_lenghts()` later on. Will fix it with with next commit.
+ *
+ * @param data_type An LWM2M_RES_TYPE_... value
+ * @param resource_length Current size of the resource
+ * @param buf_length Buffer size
+ * @reval 0 on success
+ * @retval -NOMEM Variable size resources: resource does not fit into buffer.
+ * @retval -EINVAL Fixed size resources: resource does match with buffer size.
+ */
 static int lwm2m_check_buf_sizes(uint8_t data_type, uint16_t resource_length, uint16_t buf_length)
 {
 	switch (data_type) {
@@ -888,111 +901,139 @@ static int lwm2m_engine_get(const struct lwm2m_obj_path *path, void *buf, uint16
 		return -ENOENT;
 	}
 
-	/* setup initial data elements */
-	data_ptr = res_inst->data_ptr;
-	data_len = res_inst->data_len;
-
 	/* allow user to override data elements via callback */
 	if (res->read_cb) {
 		data_ptr = res->read_cb(obj_inst->obj_inst_id, res->res_id, res_inst->res_inst_id,
 					&data_len);
+	} else {
+		/* default */
+		data_ptr = res_inst->data_ptr;
+		data_len = res_inst->data_len;
 	}
 
-	if (data_ptr && data_len > 0) {
-		ret = lwm2m_check_buf_sizes(obj_field->data_type, data_len, buflen);
-		if (ret) {
-			LOG_ERR("Incorrect resource data length %zu. Buffer length %u", data_len,
-				buflen);
-			k_mutex_unlock(&registry_lock);
-			return ret;
-		}
+	if (data_ptr == NULL) {
+		/* data_ptr is null when
+		 * - `read_cb()` fails. See `lwm2m_engine_get_data_cb_t`
+         * - no resource buffer was set
+         * Don't expect a proper `data_len` in both cases.
+         */
 
-		switch (obj_field->data_type) {
+		k_mutex_unlock(&registry_lock);
+		LOG_ERR("res instance %d has no assigned data", path->res_inst_id);
+		return -ENOENT;
+	}
 
-		case LWM2M_RES_TYPE_OPAQUE:
-			memcpy(buf, data_ptr, data_len);
-			break;
+	ret = lwm2m_check_buf_sizes(obj_field->data_type, data_len, buflen);
+	if (ret) {
+		LOG_ERR("Incorrect resource data length %zu. Buffer length %u", data_len,
+			buflen);
+		k_mutex_unlock(&registry_lock);
+		return ret;
+	}
 
-		case LWM2M_RES_TYPE_STRING:
+	switch (obj_field->data_type) {
+
+	case LWM2M_RES_TYPE_OPAQUE:
+		memcpy(buf, data_ptr, data_len);
+		break;
+
+	case LWM2M_RES_TYPE_STRING:
+		if (data_len > 0) {
+			/* Someone assumes here that an LwM2M string is a C string. If that would be the case, it would be written
+             * so in LwM2M specifications. There is written that a string is an UTF-8 string.
+             *
+             * `NUL` is a symbol like any other in `UTF-8` and therefore not required anywhere. Something like
+             * `zero termination`is a concept of the programming language C and its string library.
+             * Knowadays, no one should use the unsafe library functions without the `n` which rely on termination.
+             *
+             * By the way: in case of a full data buffer and an UTF-8 multi-byte character as last symbol, `strncpy`
+             * will "create" an invalid UTF-8 string...
+             * TODO: fix this mess
+             */
 			strncpy(buf, data_ptr, data_len - 1);
 			((char *)buf)[data_len - 1] = '\0';
-			break;
+		} else if (buflen > 0) {
+			((char *)buf)[0] = '\0';
+		} else {
+			/* not space for zero-termination */
+			k_mutex_unlock(&registry_lock);
+			LOG_ERR("Incorrect resource data length %zu. Buffer length %u", data_len, buflen);
+			return -ENOMEM;
+		}
+		break;
 
-		case LWM2M_RES_TYPE_U32:
-			*(uint32_t *)buf = *(uint32_t *)data_ptr;
-			break;
-		case LWM2M_RES_TYPE_TIME:
-			if (!lwm2m_validate_time_resource_lenghts(data_len, buflen)) {
-				LOG_ERR("Time get buffer length %u  data len %zu not supported",
-					buflen, data_len);
-				k_mutex_unlock(&registry_lock);
-				return -EINVAL;
-			}
-
-			if (data_len == sizeof(time_t)) {
-				if (buflen == sizeof(time_t)) {
-					*((time_t *)buf) = *(time_t *)data_ptr;
-				} else {
-					/* In this case get operation may not got correct value */
-					LOG_WRN("Converting time to 32bit may cause integer "
-						"overflow");
-					*((uint32_t *)buf) = (uint32_t) *((time_t *)data_ptr);
-				}
-			} else {
-				LOG_WRN("Converting time to 32bit may cause integer overflow");
-				if (buflen == sizeof(uint32_t)) {
-					*((uint32_t *)buf) = *(uint32_t *)data_ptr;
-				} else {
-					*((time_t *)buf) = (time_t) *((uint32_t *)data_ptr);
-				}
-			}
-			break;
-
-		case LWM2M_RES_TYPE_U16:
-			*(uint16_t *)buf = *(uint16_t *)data_ptr;
-			break;
-
-		case LWM2M_RES_TYPE_U8:
-			*(uint8_t *)buf = *(uint8_t *)data_ptr;
-			break;
-
-		case LWM2M_RES_TYPE_S64:
-			*(int64_t *)buf = *(int64_t *)data_ptr;
-			break;
-
-		case LWM2M_RES_TYPE_S32:
-			*(int32_t *)buf = *(int32_t *)data_ptr;
-			break;
-
-		case LWM2M_RES_TYPE_S16:
-			*(int16_t *)buf = *(int16_t *)data_ptr;
-			break;
-
-		case LWM2M_RES_TYPE_S8:
-			*(int8_t *)buf = *(int8_t *)data_ptr;
-			break;
-
-		case LWM2M_RES_TYPE_BOOL:
-			*(bool *)buf = *(bool *)data_ptr;
-			break;
-
-		case LWM2M_RES_TYPE_FLOAT:
-			*(double *)buf = *(double *)data_ptr;
-			break;
-
-		case LWM2M_RES_TYPE_OBJLNK:
-			*(struct lwm2m_objlnk *)buf = *(struct lwm2m_objlnk *)data_ptr;
-			break;
-
-		default:
-			LOG_ERR("unknown obj data_type %d", obj_field->data_type);
+	case LWM2M_RES_TYPE_U32:
+		*(uint32_t *)buf = *(uint32_t *)data_ptr;
+		break;
+	case LWM2M_RES_TYPE_TIME:
+		if (!lwm2m_validate_time_resource_lenghts(data_len, buflen)) {
+			LOG_ERR("Time get buffer length %u  data len %zu not supported",
+				buflen, data_len);
 			k_mutex_unlock(&registry_lock);
 			return -EINVAL;
 		}
-	} else if (obj_field->data_type == LWM2M_RES_TYPE_STRING) {
-		/* Ensure empty string when there is no data */
-		((char *)buf)[0] = '\0';
+
+		if (data_len == sizeof(time_t)) {
+			if (buflen == sizeof(time_t)) {
+				*((time_t *)buf) = *(time_t *)data_ptr;
+			} else {
+				/* In this case get operation may not got correct value */
+				LOG_WRN("Converting time to 32bit may cause integer "
+					"overflow");
+				*((uint32_t *)buf) = (uint32_t) *((time_t *)data_ptr);
+			}
+		} else {
+			LOG_WRN("Converting time to 32bit may cause integer overflow");
+			if (buflen == sizeof(uint32_t)) {
+				*((uint32_t *)buf) = *(uint32_t *)data_ptr;
+			} else {
+				*((time_t *)buf) = (time_t) *((uint32_t *)data_ptr);
+			}
+		}
+		break;
+
+	case LWM2M_RES_TYPE_U16:
+		*(uint16_t *)buf = *(uint16_t *)data_ptr;
+		break;
+
+	case LWM2M_RES_TYPE_U8:
+		*(uint8_t *)buf = *(uint8_t *)data_ptr;
+		break;
+
+	case LWM2M_RES_TYPE_S64:
+		*(int64_t *)buf = *(int64_t *)data_ptr;
+		break;
+
+	case LWM2M_RES_TYPE_S32:
+		*(int32_t *)buf = *(int32_t *)data_ptr;
+		break;
+
+	case LWM2M_RES_TYPE_S16:
+		*(int16_t *)buf = *(int16_t *)data_ptr;
+		break;
+
+	case LWM2M_RES_TYPE_S8:
+		*(int8_t *)buf = *(int8_t *)data_ptr;
+		break;
+
+	case LWM2M_RES_TYPE_BOOL:
+		*(bool *)buf = *(bool *)data_ptr;
+		break;
+
+	case LWM2M_RES_TYPE_FLOAT:
+		*(double *)buf = *(double *)data_ptr;
+		break;
+
+	case LWM2M_RES_TYPE_OBJLNK:
+		*(struct lwm2m_objlnk *)buf = *(struct lwm2m_objlnk *)data_ptr;
+		break;
+
+	default:
+		LOG_ERR("unknown obj data_type %d", obj_field->data_type);
+		k_mutex_unlock(&registry_lock);
+		return -EINVAL;
 	}
+
 	k_mutex_unlock(&registry_lock);
 	return 0;
 }

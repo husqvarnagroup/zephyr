@@ -37,8 +37,11 @@ static void *read_cb(uint16_t obj_inst_id,
 		     uint16_t res_inst_id,
 		     size_t *data_len)
 {
+	static double sensor_value = 42.0;
+	*data_len = sizeof(sensor_value);
+
 	callback_checker |= 0x04;
-	return 0;
+	return &sensor_value;
 }
 
 static int validate_cb(uint16_t obj_inst_id, uint16_t res_id,
