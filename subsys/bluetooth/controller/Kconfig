@@ -1178,3 +1178,9 @@ config BT_CTLR_DEBUG_PINS_CPUAPP
 	  Route debug GPIO toggling for the Bluetooth Controller. Enable this when
 	  using Bluetooth Controller Debug Pins in co-processor and the main
 	  processor needs to setup and/or route the signals.
+
+config BT_CTLR_EVENT_PIPELINE_MAX
+    int "Event pipeline max size"
+    default 7
+    help
+      Used in upper link layer to create an event FIFO queue.
