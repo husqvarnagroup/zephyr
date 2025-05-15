@@ -280,7 +280,12 @@ static int prepare_cb(struct lll_prepare_param *p)
 	ticks_at_event += lll_event_offset_get(ull);
 
 	ticks_at_start = ticks_at_event;
+
+#if defined(CONFIG_BT_CTLR_SG_TEMPHACK_PERIPHERAL)
+	ticks_at_start += HAL_TICKER_US_TO_TICKS(CONFIG_BT_CTLR_SG_TEMPHACK_PERIPHERAL_OVERHEAD);
+#else
 	ticks_at_start += HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_START_US);
+#endif
 
 	remainder = p->remainder;
 	remainder_us = radio_tmr_start(0, ticks_at_start, remainder);
@@ -332,6 +337,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 	radio_rssi_measure();
 #endif /* CONFIG_BT_CTLR_CONN_RSSI */
 
+#if !defined(CONFIG_BT_CTLR_SG_TEMPHACK_PERIPHERAL)
 #if defined(CONFIG_BT_CTLR_XTAL_ADVANCED) && \
 	(EVENT_OVERHEAD_PREEMPT_US <= EVENT_OVERHEAD_PREEMPT_MIN_US)
 	uint32_t overhead;
@@ -347,6 +353,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 		return -ECANCELED;
 	}
 #endif /* CONFIG_BT_CTLR_XTAL_ADVANCED */
+#endif /* !CONFIG_BT_CTLR_SG_TEMPHACK_PERIPHERAL */
 
 	ret = lll_prepare_done(lll);
 	LL_ASSERT(!ret);

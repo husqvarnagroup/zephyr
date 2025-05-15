@@ -1184,3 +1184,18 @@ config BT_CTLR_EVENT_PIPELINE_MAX
     default 7
     help
       Used in upper link layer to create an event FIFO queue.
+
+config BT_CTLR_SG_TEMPHACK_PERIPHERAL
+    bool "SG temphack peripheral"
+    depends on SOC_NRF54L15
+    help
+      Connecting and disconnecting repeatedly results in un-recoverable crashes
+      on nRF54L15 after about 30 iterations. This also happens with the nrf54L15DK board.
+      This ugly fix seems to work and 1000+ connect-disconnect cycles can be performed.
+
+config BT_CTLR_SG_TEMPHACK_PERIPHERAL_OVERHEAD
+    int "SG temphack peripheral overhead start value"
+    default 1000
+    depends on BT_CTLR_SG_TEMPHACK_PERIPHERAL
+    help
+      Use this value in lll_peripheral.c instead of the global value.
