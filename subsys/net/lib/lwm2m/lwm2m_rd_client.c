@@ -1745,6 +1745,8 @@ void lwm2m_rd_client_register(void)
 {
 	k_mutex_lock(&client.mutex, K_FOREVER);
 	if (!client.use_bootstrap && client.engine_state == ENGINE_IDLE && client.ctx != NULL) {
+		LOG_INF("Trigger registration");
+		lwm2m_close_socket(client.ctx);
 		set_sm_state(ENGINE_DO_REGISTRATION);
 		next_event_at(0);
 	}
