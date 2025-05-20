@@ -440,21 +440,6 @@ int path_to_objs(const struct lwm2m_obj_path *path, struct lwm2m_engine_obj_inst
 	return 0;
 }
 
-static bool is_string(const struct lwm2m_obj_path *path)
-{
-	struct lwm2m_engine_obj_field *obj_field;
-	int ret;
-
-	ret = path_to_objs(path, NULL, &obj_field, NULL, NULL);
-	if (ret < 0 || !obj_field) {
-		return false;
-	}
-	if (obj_field->data_type == LWM2M_RES_TYPE_STRING) {
-		return true;
-	}
-	return false;
-}
-
 /* User data setter functions */
 
 int lwm2m_set_res_buf(const struct lwm2m_obj_path *path, void *buffer_ptr, uint16_t buffer_len,
@@ -511,6 +496,8 @@ static int lwm2m_check_buf_sizes(uint8_t data_type, uint16_t resource_length, ui
 	case LWM2M_RES_TYPE_OPAQUE:
 	case LWM2M_RES_TYPE_STRING:
 		if (resource_length > buf_length) {
+			LOG_ERR("resource_length (%d) > buf_length (%d)", resource_length,
+				buf_length);
 			return -ENOMEM;
 		}
 		break;
@@ -525,11 +512,23 @@ static int lwm2m_check_buf_sizes(uint8_t data_type, uint16_t resource_length, ui
 	case LWM2M_RES_TYPE_FLOAT:
 	case LWM2M_RES_TYPE_OBJLNK:
 		if (resource_length != buf_length) {
+			LOG_ERR("resource_length (%d) != buf_length (%d)", resource_length,
+				buf_length);
 			return -EINVAL;
 		}
 		break;
+	case LWM2M_RES_TYPE_TIME:
+		/* must be uint32 or time_t */
+		if (buf_length != sizeof(time_t) && buf_length != sizeof(uint32_t)) {
+			LOG_ERR("sizeof(time_t) (%d) != buf_length (%d)", sizeof(time_t),
+				buf_length);
+			return -EINVAL;
+		}
+		break;
+
 	default:
-		return 0;
+		LOG_WRN("unhandled type %d", data_type);
+		return -ENOENT;
 	}
 	return 0;
 }
@@ -593,7 +592,7 @@ static int lwm2m_engine_set(const struct lwm2m_obj_path *path, const void *value
 	}
 
 	ret = lwm2m_check_buf_sizes(obj_field->data_type, len, max_data_len);
-	if (ret) {
+	if (ret < 0) {
 		LOG_ERR("Incorrect buffer length %u for res data length %zu", len,
 			max_data_len);
 		k_mutex_unlock(&registry_lock);
@@ -618,18 +617,8 @@ static int lwm2m_engine_set(const struct lwm2m_obj_path *path, const void *value
 	switch (obj_field->data_type) {
 
 	case LWM2M_RES_TYPE_OPAQUE:
-		if (len) {
-			memcpy((uint8_t *)data_ptr, value, len);
-		}
-		break;
-
 	case LWM2M_RES_TYPE_STRING:
-		if (len) {
-			strncpy(data_ptr, value, len - 1);
-			((char *)data_ptr)[len - 1] = '\0';
-		} else {
-			((char *)data_ptr)[0] = '\0';
-		}
+		memcpy(data_ptr, value, len);
 		break;
 
 	case LWM2M_RES_TYPE_U32:
@@ -733,70 +722,12 @@ int lwm2m_set_string(const struct lwm2m_obj_path *path, const char *data_ptr)
 {
 	uint16_t len = strlen(data_ptr);
 
-	/* String resources contain terminator as well, opaque resources don't */
-	if (is_string(path)) {
-		len += 1;
-	}
-
+	/* LwM2M String type does not specify to use a C zero-terminator.
+	 * See Appendix C. Data Types (Normative)
+	 *
+	 * String: A UTF-8 string, the minimum and/or maximum length of the String MAY be defined.
+	 */
 	return lwm2m_engine_set(path, data_ptr, len);
-}
-
-int lwm2m_set_u8(const struct lwm2m_obj_path *path, uint8_t value)
-{
-	return lwm2m_engine_set(path, &value, 1);
-}
-
-int lwm2m_set_u16(const struct lwm2m_obj_path *path, uint16_t value)
-{
-	return lwm2m_engine_set(path, &value, 2);
-}
-
-int lwm2m_set_u32(const struct lwm2m_obj_path *path, uint32_t value)
-{
-	return lwm2m_engine_set(path, &value, 4);
-}
-
-int lwm2m_set_s8(const struct lwm2m_obj_path *path, int8_t value)
-{
-	return lwm2m_engine_set(path, &value, 1);
-}
-
-int lwm2m_set_s16(const struct lwm2m_obj_path *path, int16_t value)
-{
-	return lwm2m_engine_set(path, &value, 2);
-
-}
-
-int lwm2m_set_s32(const struct lwm2m_obj_path *path, int32_t value)
-{
-	return lwm2m_engine_set(path, &value, 4);
-}
-
-int lwm2m_set_s64(const struct lwm2m_obj_path *path, int64_t value)
-{
-	return lwm2m_engine_set(path, &value, 8);
-}
-
-int lwm2m_set_bool(const struct lwm2m_obj_path *path, bool value)
-{
-	uint8_t temp = (value != 0 ? 1 : 0);
-
-	return lwm2m_engine_set(path, &temp, 1);
-}
-
-int lwm2m_set_f64(const struct lwm2m_obj_path *path, const double value)
-{
-	return lwm2m_engine_set(path, &value, sizeof(double));
-}
-
-int lwm2m_set_objlnk(const struct lwm2m_obj_path *path, const struct lwm2m_objlnk *value)
-{
-	return lwm2m_engine_set(path, value, sizeof(struct lwm2m_objlnk));
-}
-
-int lwm2m_set_time(const struct lwm2m_obj_path *path, time_t value)
-{
-	return lwm2m_engine_set(path, &value, sizeof(time_t));
 }
 
 int lwm2m_set_res_data_len(const struct lwm2m_obj_path *path, uint16_t data_len)
@@ -857,6 +788,13 @@ int lwm2m_get_res_buf(const struct lwm2m_obj_path *path, void **buffer_ptr, uint
 	return 0;
 }
 
+/**
+ *
+ * @retval >=0 copied number of octes
+ * @retval -EINVAL invalid path
+ * @retval -ENOENT no resource instance
+ * @retval -NOMEM buflen is too small
+ */
 static int lwm2m_engine_get(const struct lwm2m_obj_path *path, void *buf, uint16_t buflen)
 {
 	int ret = 0;
@@ -888,17 +826,23 @@ static int lwm2m_engine_get(const struct lwm2m_obj_path *path, void *buf, uint16
 		return -ENOENT;
 	}
 
-	/* setup initial data elements */
-	data_ptr = res_inst->data_ptr;
-	data_len = res_inst->data_len;
-
 	/* allow user to override data elements via callback */
 	if (res->read_cb) {
 		data_ptr = res->read_cb(obj_inst->obj_inst_id, res->res_id, res_inst->res_inst_id,
 					&data_len);
+	} else {
+		/* default */
+		data_ptr = res_inst->data_ptr;
+		data_len = res_inst->data_len;
 	}
 
-	if (data_ptr && data_len > 0) {
+	if (data_ptr == NULL) {
+		k_mutex_unlock(&registry_lock);
+		LOG_ERR("no valid data pointer", path->res_inst_id);
+		return -ENOMEM;
+	}
+
+	if (data_ptr != NULL) {
 		ret = lwm2m_check_buf_sizes(obj_field->data_type, data_len, buflen);
 		if (ret) {
 			LOG_ERR("Incorrect resource data length %zu. Buffer length %u", data_len,
@@ -909,17 +853,24 @@ static int lwm2m_engine_get(const struct lwm2m_obj_path *path, void *buf, uint16
 
 		switch (obj_field->data_type) {
 
+		/* `lwm2m_check_buf_sizes()` ensures that memcpy works for these type */
 		case LWM2M_RES_TYPE_OPAQUE:
-			memcpy(buf, data_ptr, data_len);
-			break;
-
 		case LWM2M_RES_TYPE_STRING:
-			strncpy(buf, data_ptr, data_len - 1);
-			((char *)buf)[data_len - 1] = '\0';
+			memcpy(buf, data_ptr, data_len);
+			ret = data_len;
 			break;
-
 		case LWM2M_RES_TYPE_U32:
-			*(uint32_t *)buf = *(uint32_t *)data_ptr;
+		case LWM2M_RES_TYPE_U16:
+		case LWM2M_RES_TYPE_U8:
+		case LWM2M_RES_TYPE_S64:
+		case LWM2M_RES_TYPE_S32:
+		case LWM2M_RES_TYPE_S16:
+		case LWM2M_RES_TYPE_S8:
+		case LWM2M_RES_TYPE_BOOL:
+		case LWM2M_RES_TYPE_FLOAT:
+		case LWM2M_RES_TYPE_OBJLNK:
+			memcpy(buf, data_ptr, data_len);
+			ret = 0;
 			break;
 		case LWM2M_RES_TYPE_TIME:
 			if (!lwm2m_validate_time_resource_lenghts(data_len, buflen)) {
@@ -932,56 +883,24 @@ static int lwm2m_engine_get(const struct lwm2m_obj_path *path, void *buf, uint16
 			if (data_len == sizeof(time_t)) {
 				if (buflen == sizeof(time_t)) {
 					*((time_t *)buf) = *(time_t *)data_ptr;
+					ret = sizeof(time_t);
 				} else {
 					/* In this case get operation may not got correct value */
 					LOG_WRN("Converting time to 32bit may cause integer "
 						"overflow");
 					*((uint32_t *)buf) = (uint32_t) *((time_t *)data_ptr);
+					ret = sizeof(uint32_t);
 				}
 			} else {
 				LOG_WRN("Converting time to 32bit may cause integer overflow");
 				if (buflen == sizeof(uint32_t)) {
 					*((uint32_t *)buf) = *(uint32_t *)data_ptr;
+					ret = sizeof(uint32_t);
 				} else {
 					*((time_t *)buf) = (time_t) *((uint32_t *)data_ptr);
+					ret = sizeof(time_t);
 				}
 			}
-			break;
-
-		case LWM2M_RES_TYPE_U16:
-			*(uint16_t *)buf = *(uint16_t *)data_ptr;
-			break;
-
-		case LWM2M_RES_TYPE_U8:
-			*(uint8_t *)buf = *(uint8_t *)data_ptr;
-			break;
-
-		case LWM2M_RES_TYPE_S64:
-			*(int64_t *)buf = *(int64_t *)data_ptr;
-			break;
-
-		case LWM2M_RES_TYPE_S32:
-			*(int32_t *)buf = *(int32_t *)data_ptr;
-			break;
-
-		case LWM2M_RES_TYPE_S16:
-			*(int16_t *)buf = *(int16_t *)data_ptr;
-			break;
-
-		case LWM2M_RES_TYPE_S8:
-			*(int8_t *)buf = *(int8_t *)data_ptr;
-			break;
-
-		case LWM2M_RES_TYPE_BOOL:
-			*(bool *)buf = *(bool *)data_ptr;
-			break;
-
-		case LWM2M_RES_TYPE_FLOAT:
-			*(double *)buf = *(double *)data_ptr;
-			break;
-
-		case LWM2M_RES_TYPE_OBJLNK:
-			*(struct lwm2m_objlnk *)buf = *(struct lwm2m_objlnk *)data_ptr;
 			break;
 
 		default:
@@ -989,92 +908,75 @@ static int lwm2m_engine_get(const struct lwm2m_obj_path *path, void *buf, uint16
 			k_mutex_unlock(&registry_lock);
 			return -EINVAL;
 		}
-	} else if (obj_field->data_type == LWM2M_RES_TYPE_STRING) {
-		/* Ensure empty string when there is no data */
-		((char *)buf)[0] = '\0';
 	}
 	k_mutex_unlock(&registry_lock);
-	return 0;
-}
-
-int lwm2m_get_opaque(const struct lwm2m_obj_path *path, void *buf, uint16_t buflen)
-{
-	return lwm2m_engine_get(path, buf, buflen);
-}
-
-int lwm2m_get_string(const struct lwm2m_obj_path *path, void *str, uint16_t buflen)
-{
-	/* Ensure termination, in case resource is not a string type */
-	if (!is_string(path)) {
-		memset(str, 0, buflen);
-		buflen -= 1; /* Last terminator cannot be overwritten */
-	}
-
-	return lwm2m_engine_get(path, str, buflen);
-}
-
-int lwm2m_get_u8(const struct lwm2m_obj_path *path, uint8_t *value)
-{
-	return lwm2m_engine_get(path, value, 1);
-}
-
-int lwm2m_get_u16(const struct lwm2m_obj_path *path, uint16_t *value)
-{
-	return lwm2m_engine_get(path, value, 2);
-}
-
-int lwm2m_get_u32(const struct lwm2m_obj_path *path, uint32_t *value)
-{
-	return lwm2m_engine_get(path, value, 4);
-}
-
-int lwm2m_get_s8(const struct lwm2m_obj_path *path, int8_t *value)
-{
-	return lwm2m_engine_get(path, value, 1);
-}
-
-int lwm2m_get_s16(const struct lwm2m_obj_path *path, int16_t *value)
-{
-	return lwm2m_engine_get(path, value, 2);
-}
-
-int lwm2m_get_s32(const struct lwm2m_obj_path *path, int32_t *value)
-{
-	return lwm2m_engine_get(path, value, 4);
-}
-
-int lwm2m_get_s64(const struct lwm2m_obj_path *path, int64_t *value)
-{
-	return lwm2m_engine_get(path, value, 8);
-}
-
-int lwm2m_get_bool(const struct lwm2m_obj_path *path, bool *value)
-{
-	int ret = 0;
-	int8_t temp = 0;
-
-	ret = lwm2m_get_s8(path, &temp);
-	if (!ret) {
-		*value = temp != 0;
-	}
-
 	return ret;
 }
 
-int lwm2m_get_f64(const struct lwm2m_obj_path *path, double *value)
+int lwm2m_get_opaque(const struct lwm2m_obj_path *path, void *buf, uint16_t *buflen)
 {
-	return lwm2m_engine_get(path, value, sizeof(double));
+	int ret = lwm2m_engine_get(path, buf, *buflen);
+	if (ret < 0) {
+		return ret;
+	}
+	*buflen = ret;
+	return 0;
 }
 
-int lwm2m_get_objlnk(const struct lwm2m_obj_path *path, struct lwm2m_objlnk *buf)
+int lwm2m_get_string(const struct lwm2m_obj_path *path, char *str, uint16_t *buflen)
 {
-	return lwm2m_engine_get(path, buf, sizeof(struct lwm2m_objlnk));
+	int ret = lwm2m_engine_get(path, str, *buflen - 1);
+	if (ret < 0) {
+		return ret;
+	}
+
+	/* add a zero termination */
+	str[ret] = '\0';
+	*buflen = ret;
+	return 0;
 }
 
-int lwm2m_get_time(const struct lwm2m_obj_path *path, time_t *buf)
-{
-	return lwm2m_engine_get(path, buf, sizeof(time_t));
-}
+#define LWM2M_GET(short_type, c_type)                                                              \
+	int lwm2m_get##short_type(const struct lwm2m_obj_path *path, c_type *value)                \
+	{                                                                                          \
+		int ret = lwm2m_engine_get(path, value, sizeof(c_type));                           \
+		return ret < 0 ? ret : 0;		\
+	}
+
+#define LWM2M_SET_BY_VAL(short_type, c_type)                                                       \
+	int lwm2m_set##short_type(const struct lwm2m_obj_path *path, const c_type value)           \
+	{                                                                                          \
+		return lwm2m_engine_set(path, &value, sizeof(c_type));                             \
+	}
+
+#define LWM2M_SET_BY_REF(short_type, c_type)                                                       \
+	int lwm2m_set##short_type(const struct lwm2m_obj_path *path, const c_type *value)          \
+	{                                                                                          \
+		return lwm2m_engine_set(path, value, sizeof(c_type));                              \
+	}
+
+#define LWM2M_SET_REF_GET_REF(short_type, c_type)                                                  \
+	LWM2M_SET_BY_REF(short_type, c_type);                                                      \
+	LWM2M_GET(short_type, c_type)
+
+#define LWM2M_SET_VAL_GET_REF(short_type, c_type)                                                  \
+	LWM2M_SET_BY_VAL(short_type, c_type);                                                      \
+	LWM2M_GET(short_type, c_type)
+
+/* set by value, get by reference */
+LWM2M_SET_VAL_GET_REF(_u8, uint8_t);
+LWM2M_SET_VAL_GET_REF(_u16, uint16_t);
+LWM2M_SET_VAL_GET_REF(_u32, uint32_t);
+LWM2M_SET_VAL_GET_REF(_s8, int8_t);
+LWM2M_SET_VAL_GET_REF(_s16, int16_t);
+LWM2M_SET_VAL_GET_REF(_s32, int32_t);
+LWM2M_SET_VAL_GET_REF(_s64, int64_t);
+LWM2M_SET_VAL_GET_REF(_f64, double);
+LWM2M_SET_VAL_GET_REF(_time, time_t);
+LWM2M_SET_VAL_GET_REF(_bool, bool);
+
+/* set by reference, also known as pointer */
+LWM2M_SET_REF_GET_REF(_objlnk, struct lwm2m_objlnk);
 
 int lwm2m_get_resource(const struct lwm2m_obj_path *path, struct lwm2m_engine_res **res)
 {
