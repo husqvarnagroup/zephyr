@@ -588,3 +588,54 @@ ZTEST(lwm2m_registry, test_set_bulk)
 	zassert_equal(memcmp(&objl, &(struct lwm2m_objlnk){.obj_id = 10, .obj_inst = 20},
 		sizeof(objl)), 0);
 }
+
+
+static void *failing_read_cb(uint16_t obj_inst_id,
+		     uint16_t res_id,
+		     uint16_t res_inst_id,
+		     size_t *data_len)
+{
+	return NULL;
+}
+
+/* A read callback may return NULL to indicate an error,
+ * see `lwm2m_engine_get_data_cb_t`.
+ *
+ * Any lwm2m_getter function should return than an error as well.
+ */
+ZTEST(lwm2m_registry, test_read_callback_with_error)
+{
+	int ret;
+	double sensor_val;
+
+	zassert_ok(lwm2m_create_object_inst(&LWM2M_OBJ(3303, 0)));
+	zassert_ok(lwm2m_register_read_callback(&LWM2M_OBJ(3303, 0, 5700), failing_read_cb));
+
+	ret = lwm2m_get_f64(&LWM2M_OBJ(3303, 0, 5700), &sensor_val);
+	zassert_not_ok(ret);
+	zassert_equal(ret, -ENOENT);
+
+	/* cleanup */
+	zassert_ok(lwm2m_delete_object_inst(&LWM2M_OBJ(3303, 0)));
+}
+
+/* Try to read an empty string and opaque resoucre into a buffer with length 0.
+ * Should work and must not modify the buffer.
+ */
+ZTEST(lwm2m_registry, test_read_empty_resource_with_zero_length_buffer)
+{
+	zassert_ok(lwm2m_set_res_data_len(&LWM2M_OBJ(32768, 0, LWM2M_RES_TYPE_STRING), 0));
+	zassert_ok(lwm2m_set_res_data_len(&LWM2M_OBJ(32768, 0, LWM2M_RES_TYPE_OPAQUE), 0));
+
+	const char pattern[] = { 0xff };
+	char string[sizeof(pattern)];
+	char opaque[sizeof(pattern)];
+
+	memcpy(string, pattern, sizeof(pattern));
+	zassert_ok(lwm2m_get_string(&LWM2M_OBJ(32768, 0, LWM2M_RES_TYPE_STRING), string, 0));
+	zassert_mem_equal(string, pattern, sizeof(pattern));
+
+	memcpy(opaque, pattern, sizeof(pattern));
+	zassert_ok(lwm2m_get_opaque(&LWM2M_OBJ(32768, 0, LWM2M_RES_TYPE_OPAQUE), opaque, 0));
+	zassert_mem_equal(opaque, pattern, sizeof(pattern));
+}
