@@ -702,8 +702,19 @@ static void clock_event_handler(nrfx_clock_evt_type_t event)
 	switch (event) {
 #if NRF_CLOCK_HAS_XO_TUNE
 	case NRFX_CLOCK_EVT_XO_TUNED:
-		clkstarted_handle(dev, CLOCK_CONTROL_NRF_TYPE_HFCLK);
+	{
+		struct nrf_clock_control_sub_data *data =
+			get_sub_data(dev, CLOCK_CONTROL_NRF_TYPE_HFCLK);
+
+		/* Check needed due to anomaly 201:
+		 * HFCLKSTARTED may be generated twice.
+		 */
+		if (GET_STATUS(data->flags) == CLOCK_CONTROL_STATUS_STARTING) {
+			clkstarted_handle(dev, CLOCK_CONTROL_NRF_TYPE_HFCLK);
+		}
+
 		break;
+	}
 	case NRFX_CLOCK_EVT_XO_TUNE_ERROR:
 	case NRFX_CLOCK_EVT_XO_TUNE_FAILED:
 		/* No processing needed. */
